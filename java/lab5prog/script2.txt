@@ -1,3 +1,0 @@
-show
-help
-execute_script script3.txt
