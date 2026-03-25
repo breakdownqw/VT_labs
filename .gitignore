@@ -1,4 +1,6 @@
-web/lab1/.DS_Store
-web/lab1/src/.DS_Store
-web/lab1/src/main/.DS_Store
-java/lab7/common/src/main/resources/hasherconfig.properties
+
+.DS_Store
+web/lab4/backend/src/main/resources/application.properties
+web/lab4/frontend/package-lock.json
+web/lab4/frontend/package.json
+web/lab4/frontend/eslint.config.js
