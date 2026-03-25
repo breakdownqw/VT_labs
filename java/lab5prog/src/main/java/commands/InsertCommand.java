@@ -1,14 +1,11 @@
 package commands;
 
 import city.City;
-import commands.Command;
-import commands.ScriptAwareCommand;
 import data.ConsoleDataReader;
 import data.DataReader;
 import data.FileDataReader;
 import io.CityInputStrategy;
 import storage.CityManager;
-import util.IdGenerator;
 
 import java.io.BufferedReader;
 import java.io.IOException;
