@@ -31,6 +31,7 @@ class Opcode(IntEnum):
     SGT = 0x32
     SLE = 0x33
     SGE = 0x34
+    SLTU = 0x35
 
     LW = 0x40
     SW = 0x41
@@ -94,6 +95,7 @@ R_FORMAT = {
     "sgt",
     "sle",
     "sge",
+    "sltu",
 }
 
 V_FORMAT = {
@@ -122,6 +124,7 @@ MNEMONIC_TO_OPCODE: dict[str, Opcode] = {
     "sgt": Opcode.SGT,
     "sle": Opcode.SLE,
     "sge": Opcode.SGE,
+    "sltu": Opcode.SLTU,
 
     "lw": Opcode.LW,
     "sw": Opcode.SW,
