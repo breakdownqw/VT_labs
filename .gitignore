@@ -4,3 +4,7 @@ web/lab4/backend/src/main/resources/application.properties
 web/lab4/frontend/package-lock.json
 web/lab4/frontend/package.json
 web/lab4/frontend/eslint.config.js
+/java/lab5/target
+java/lab5/script1.txt
+java/lab5/script2.txt
+java/lab5/script3.txt
