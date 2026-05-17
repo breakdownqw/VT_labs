@@ -1,9 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 from enum import IntEnum
-from typing import Iterable
-
 
 WORD_SIZE_BYTES = 4
 WORD_MASK = 0xFFFFFFFF
@@ -67,9 +66,7 @@ REGISTER_CODES: dict[str, int] = {
     "t6": 0xA,
 }
 
-CODE_TO_REGISTER: dict[int, str] = {
-    code: name for name, code in REGISTER_CODES.items()
-}
+CODE_TO_REGISTER: dict[int, str] = {code: name for name, code in REGISTER_CODES.items()}
 
 
 VECTOR_REGISTER_CODES: dict[str, int] = {
@@ -109,34 +106,27 @@ V_FORMAT = {
 
 MNEMONIC_TO_OPCODE: dict[str, Opcode] = {
     "halt": Opcode.HALT,
-
     "lui": Opcode.LUI,
     "addi": Opcode.ADDI,
-
     "add": Opcode.ADD,
     "sub": Opcode.SUB,
     "mul": Opcode.MUL,
     "div": Opcode.DIV,
     "rem": Opcode.REM,
-
     "seq": Opcode.SEQ,
     "slt": Opcode.SLT,
     "sgt": Opcode.SGT,
     "sle": Opcode.SLE,
     "sge": Opcode.SGE,
     "sltu": Opcode.SLTU,
-
     "lw": Opcode.LW,
     "sw": Opcode.SW,
-
     "j": Opcode.J,
     "beqz": Opcode.BEQZ,
     "bnez": Opcode.BNEZ,
-
     "jal": Opcode.JAL,
     "jr": Opcode.JR,
     "jalr": Opcode.JALR,
-
     "vlw": Opcode.VLW,
     "vsw": Opcode.VSW,
     "vadd": Opcode.VADD,
@@ -516,8 +506,7 @@ def signed_immediate(value: str | int, bits: int) -> int:
 
     if not min_value <= number <= max_value:
         raise ValueError(
-            f"Signed immediate {number} does not fit into {bits} bits "
-            f"({min_value}..{max_value})"
+            f"Signed immediate {number} does not fit into {bits} bits ({min_value}..{max_value})"
         )
 
     return number & ((1 << bits) - 1)
@@ -531,8 +520,7 @@ def unsigned_immediate(value: str | int, bits: int) -> int:
 
     if not min_value <= number <= max_value:
         raise ValueError(
-            f"Unsigned immediate {number} does not fit into {bits} bits "
-            f"({min_value}..{max_value})"
+            f"Unsigned immediate {number} does not fit into {bits} bits ({min_value}..{max_value})"
         )
 
     return number
@@ -585,6 +573,5 @@ def require_operand_count(
 ) -> None:
     if len(operands) != expected_count:
         raise ValueError(
-            f"Instruction {mnemonic} expects {expected_count} operands, "
-            f"got {len(operands)}"
+            f"Instruction {mnemonic} expects {expected_count} operands, got {len(operands)}"
         )
