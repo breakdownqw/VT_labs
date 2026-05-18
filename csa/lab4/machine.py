@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import argparse
-from collections.abc import Callable
 from dataclasses import dataclass
+from enum import IntEnum
 from pathlib import Path
 
 from isa import (
@@ -121,7 +121,48 @@ V_OPCODES = {
 @dataclass(frozen=True)
 class MicroInstruction:
     name: str
-    action: Callable[[Machine], int | None]
+    microcommand: int
+    next_upc: int | None = None
+
+
+class ControlSignal(IntEnum):
+    PC_TO_MAR = 0
+    MEMORY_TO_MDR = 1
+    MDR_TO_IR = 2
+    INC_PC = 3
+    DISPATCH = 4
+    HALT = 5
+    IMM20_SHIFT_TO_ALU = 6
+    ALU_TO_RD = 7
+    RS1_TO_A = 8
+    RS2_TO_B = 9
+    RD_TO_A = 10
+    IMM16_TO_B = 11
+    OFFSET20_TO_B = 12
+    OFFSET24_TO_B = 13
+    A_PLUS_B_TO_ALU = 14
+    R_OPERATION_TO_ALU = 15
+    ALU_TO_MAR = 16
+    MDR_TO_RD = 17
+    RD_TO_MDR = 18
+    MDR_TO_MEMORY = 19
+    PC_TO_A = 20
+    ALU_TO_PC = 21
+    PC_TO_RD = 22
+    A_TO_PC = 23
+    PC_PLUS_OFFSET20_IF_A_ZERO = 24
+    PC_PLUS_OFFSET20_IF_A_NOT_ZERO = 25
+    VECTOR_LOAD_0 = 26
+    VECTOR_LOAD_1 = 27
+    VECTOR_LOAD_2 = 28
+    VECTOR_LOAD_3 = 29
+    VECTOR_STORE_0 = 30
+    VECTOR_STORE_1 = 31
+    VECTOR_STORE_2 = 32
+    VECTOR_STORE_3 = 33
+    V_OPERATION_TO_VD = 34
+    A_PLUS_B_TO_MAR = 35
+    A_PLUS_B_TO_PC = 36
 
 
 class Machine:
@@ -205,7 +246,7 @@ class Machine:
         micro_instruction = self.microcode[self.upc]
 
         before = self.short_state()
-        next_upc = micro_instruction.action(self)
+        next_upc = self.execute_microinstruction(micro_instruction)
         after = self.short_state()
 
         if self.log_limit > 0 and len(self.log) < self.log_limit:
@@ -223,6 +264,128 @@ class Machine:
 
         self.registers["zero"] = 0
         self.tick_count += 1
+
+    def execute_microinstruction(self, micro_instruction: MicroInstruction) -> int | None:
+        microcommand = micro_instruction.microcommand
+
+        if has_signal(microcommand, ControlSignal.PC_TO_MAR):
+            self.mar = self.pc & WORD_MASK
+
+        if has_signal(microcommand, ControlSignal.MEMORY_TO_MDR):
+            self.mdr = self.read_memory(self.mar)
+
+        if has_signal(microcommand, ControlSignal.MDR_TO_IR):
+            self.ir = self.mdr & WORD_MASK
+
+        if has_signal(microcommand, ControlSignal.INC_PC):
+            self.pc = (self.pc + 1) & WORD_MASK
+
+        if has_signal(microcommand, ControlSignal.DISPATCH):
+            opcode = self.opcode()
+
+            if opcode not in self.dispatch_table:
+                raise RuntimeError(f"No microprogram for opcode: {opcode}")
+
+            return self.dispatch_table[opcode]
+
+        if has_signal(microcommand, ControlSignal.HALT):
+            self.halted = True
+            return None
+
+        if has_signal(microcommand, ControlSignal.IMM20_SHIFT_TO_ALU):
+            self.alu = (self.imm20() << 12) & WORD_MASK
+
+        if has_signal(microcommand, ControlSignal.RS1_TO_A):
+            self.a = self.get_register_by_code(self.rs1())
+
+        if has_signal(microcommand, ControlSignal.RS2_TO_B):
+            self.b = self.get_register_by_code(self.rs2())
+
+        if has_signal(microcommand, ControlSignal.RD_TO_A):
+            self.a = self.get_register_by_code(self.rd())
+
+        if has_signal(microcommand, ControlSignal.IMM16_TO_B):
+            self.b = self.imm16()
+
+        if has_signal(microcommand, ControlSignal.OFFSET20_TO_B):
+            self.b = self.offset20()
+
+        if has_signal(microcommand, ControlSignal.OFFSET24_TO_B):
+            self.b = self.offset24()
+
+        if has_signal(microcommand, ControlSignal.A_PLUS_B_TO_ALU):
+            self.alu = (self.a + self.b) & WORD_MASK
+
+        if has_signal(microcommand, ControlSignal.R_OPERATION_TO_ALU):
+            self.alu = self.run_r_operation() & WORD_MASK
+
+        if has_signal(microcommand, ControlSignal.ALU_TO_MAR):
+            self.mar = self.alu & WORD_MASK
+
+        if has_signal(microcommand, ControlSignal.A_PLUS_B_TO_MAR):
+            self.mar = (self.a + self.b) & WORD_MASK
+
+        if has_signal(microcommand, ControlSignal.ALU_TO_RD):
+            self.set_register_by_code(self.rd(), self.alu)
+
+        if has_signal(microcommand, ControlSignal.MDR_TO_RD):
+            self.set_register_by_code(self.rd(), self.mdr)
+
+        if has_signal(microcommand, ControlSignal.RD_TO_MDR):
+            self.mdr = self.get_register_by_code(self.rd())
+
+        if has_signal(microcommand, ControlSignal.MDR_TO_MEMORY):
+            self.write_memory(self.mar, self.mdr)
+
+        if has_signal(microcommand, ControlSignal.PC_TO_A):
+            self.a = self.pc
+
+        if has_signal(microcommand, ControlSignal.ALU_TO_PC):
+            self.pc = self.alu & WORD_MASK
+
+        if has_signal(microcommand, ControlSignal.A_PLUS_B_TO_PC):
+            self.pc = (self.a + self.b) & WORD_MASK
+
+        if has_signal(microcommand, ControlSignal.PC_TO_RD):
+            self.set_register_by_code(self.rd(), self.pc)
+
+        if has_signal(microcommand, ControlSignal.A_TO_PC):
+            self.pc = self.a & WORD_MASK
+
+        if has_signal(microcommand, ControlSignal.PC_PLUS_OFFSET20_IF_A_ZERO) and self.a == 0:
+            self.pc = (self.pc + self.offset20()) & WORD_MASK
+
+        if has_signal(microcommand, ControlSignal.PC_PLUS_OFFSET20_IF_A_NOT_ZERO) and self.a != 0:
+            self.pc = (self.pc + self.offset20()) & WORD_MASK
+
+        self.execute_vector_signals(microcommand)
+
+        if has_signal(microcommand, ControlSignal.V_OPERATION_TO_VD):
+            self.set_vector_register_by_code(self.rd(), self.run_v_operation())
+
+        return micro_instruction.next_upc
+
+    def execute_vector_signals(self, microcommand: int) -> None:
+        for signal, index in (
+            (ControlSignal.VECTOR_LOAD_0, 0),
+            (ControlSignal.VECTOR_LOAD_1, 1),
+            (ControlSignal.VECTOR_LOAD_2, 2),
+            (ControlSignal.VECTOR_LOAD_3, 3),
+        ):
+            if has_signal(microcommand, signal):
+                values = self.get_vector_register_by_code(self.rd()).copy()
+                values[index] = self.read_memory(self.mar + index)
+                self.set_vector_register_by_code(self.rd(), values)
+
+        for signal, index in (
+            (ControlSignal.VECTOR_STORE_0, 0),
+            (ControlSignal.VECTOR_STORE_1, 1),
+            (ControlSignal.VECTOR_STORE_2, 2),
+            (ControlSignal.VECTOR_STORE_3, 3),
+        ):
+            if has_signal(microcommand, signal):
+                values = self.get_vector_register_by_code(self.rd())
+                self.write_memory(self.mar + index, values[index])
 
     def short_state(self) -> str:
         instruction_text = self.current_instruction_text()
@@ -404,66 +567,115 @@ class Machine:
 
 def build_microcode() -> dict[int, MicroInstruction]:
     return {
-        FETCH_0: MicroInstruction("FETCH_0", fetch_0),
-        FETCH_1: MicroInstruction("FETCH_1", fetch_1),
-        FETCH_2: MicroInstruction("FETCH_2", fetch_2),
-        DECODE: MicroInstruction("DECODE", decode),
-        HALT_0: MicroInstruction("HALT_0", halt_0),
-        LUI_0: MicroInstruction("LUI_0", lui_0),
-        LUI_1: MicroInstruction("LUI_1", lui_1),
-        ADDI_0: MicroInstruction("ADDI_0", addi_0),
-        ADDI_1: MicroInstruction("ADDI_1", addi_1),
-        ADDI_2: MicroInstruction("ADDI_2", addi_2),
-        ADDI_3: MicroInstruction("ADDI_3", addi_3),
-        R_0: MicroInstruction("R_0", r_0),
-        R_1: MicroInstruction("R_1", r_1),
-        R_2: MicroInstruction("R_2", r_2),
-        R_3: MicroInstruction("R_3", r_3),
-        LW_0: MicroInstruction("LW_0", lw_0),
-        LW_1: MicroInstruction("LW_1", lw_1),
-        LW_2: MicroInstruction("LW_2", lw_2),
-        LW_3: MicroInstruction("LW_3", lw_3),
-        LW_4: MicroInstruction("LW_4", lw_4),
-        SW_0: MicroInstruction("SW_0", sw_0),
-        SW_1: MicroInstruction("SW_1", sw_1),
-        SW_2: MicroInstruction("SW_2", sw_2),
-        SW_3: MicroInstruction("SW_3", sw_3),
-        SW_4: MicroInstruction("SW_4", sw_4),
-        J_0: MicroInstruction("J_0", j_0),
-        J_1: MicroInstruction("J_1", j_1),
-        J_2: MicroInstruction("J_2", j_2),
-        BEQZ_0: MicroInstruction("BEQZ_0", beqz_0),
-        BEQZ_1: MicroInstruction("BEQZ_1", beqz_1),
-        BEQZ_2: MicroInstruction("BEQZ_2", beqz_2),
-        BNEZ_0: MicroInstruction("BNEZ_0", bnez_0),
-        BNEZ_1: MicroInstruction("BNEZ_1", bnez_1),
-        BNEZ_2: MicroInstruction("BNEZ_2", bnez_2),
-        JAL_0: MicroInstruction("JAL_0", jal_0),
-        JAL_1: MicroInstruction("JAL_1", jal_1),
-        JAL_2: MicroInstruction("JAL_2", jal_2),
-        JAL_3: MicroInstruction("JAL_3", jal_3),
-        JR_0: MicroInstruction("JR_0", jr_0),
-        JR_1: MicroInstruction("JR_1", jr_1),
-        JALR_0: MicroInstruction("JALR_0", jalr_0),
-        JALR_1: MicroInstruction("JALR_1", jalr_1),
-        JALR_2: MicroInstruction("JALR_2", jalr_2),
-        VLW_0: MicroInstruction("VLW_0", vlw_0),
-        VLW_1: MicroInstruction("VLW_1", vlw_1),
-        VLW_2: MicroInstruction("VLW_2", vlw_2),
-        VLW_3: MicroInstruction("VLW_3", vlw_3),
-        VLW_4: MicroInstruction("VLW_4", vlw_4),
-        VLW_5: MicroInstruction("VLW_5", vlw_5),
-        VLW_6: MicroInstruction("VLW_6", vlw_6),
-        VSW_0: MicroInstruction("VSW_0", vsw_0),
-        VSW_1: MicroInstruction("VSW_1", vsw_1),
-        VSW_2: MicroInstruction("VSW_2", vsw_2),
-        VSW_3: MicroInstruction("VSW_3", vsw_3),
-        VSW_4: MicroInstruction("VSW_4", vsw_4),
-        VSW_5: MicroInstruction("VSW_5", vsw_5),
-        VSW_6: MicroInstruction("VSW_6", vsw_6),
-        V_0: MicroInstruction("V_0", v_0),
-        V_1: MicroInstruction("V_1", v_1),
+        FETCH_0: MicroInstruction("FETCH_0", mc(ControlSignal.PC_TO_MAR), FETCH_1),
+        FETCH_1: MicroInstruction("FETCH_1", mc(ControlSignal.MEMORY_TO_MDR), FETCH_2),
+        FETCH_2: MicroInstruction(
+            "FETCH_2",
+            mc(ControlSignal.MDR_TO_IR, ControlSignal.INC_PC),
+            DECODE,
+        ),
+        DECODE: MicroInstruction("DECODE", mc(ControlSignal.DISPATCH)),
+        HALT_0: MicroInstruction("HALT_0", mc(ControlSignal.HALT)),
+        LUI_0: MicroInstruction("LUI_0", mc(ControlSignal.IMM20_SHIFT_TO_ALU), LUI_1),
+        LUI_1: MicroInstruction("LUI_1", mc(ControlSignal.ALU_TO_RD), FETCH_0),
+        ADDI_0: MicroInstruction("ADDI_0", mc(ControlSignal.RS1_TO_A), ADDI_1),
+        ADDI_1: MicroInstruction("ADDI_1", mc(ControlSignal.IMM16_TO_B), ADDI_2),
+        ADDI_2: MicroInstruction("ADDI_2", mc(ControlSignal.A_PLUS_B_TO_ALU), ADDI_3),
+        ADDI_3: MicroInstruction("ADDI_3", mc(ControlSignal.ALU_TO_RD), FETCH_0),
+        R_0: MicroInstruction("R_0", mc(ControlSignal.RS1_TO_A), R_1),
+        R_1: MicroInstruction("R_1", mc(ControlSignal.RS2_TO_B), R_2),
+        R_2: MicroInstruction("R_2", mc(ControlSignal.R_OPERATION_TO_ALU), R_3),
+        R_3: MicroInstruction("R_3", mc(ControlSignal.ALU_TO_RD), FETCH_0),
+        LW_0: MicroInstruction("LW_0", mc(ControlSignal.RS1_TO_A), LW_1),
+        LW_1: MicroInstruction("LW_1", mc(ControlSignal.IMM16_TO_B), LW_2),
+        LW_2: MicroInstruction(
+            "LW_2",
+            mc(ControlSignal.A_PLUS_B_TO_MAR),
+            LW_3,
+        ),
+        LW_3: MicroInstruction("LW_3", mc(ControlSignal.MEMORY_TO_MDR), LW_4),
+        LW_4: MicroInstruction("LW_4", mc(ControlSignal.MDR_TO_RD), FETCH_0),
+        SW_0: MicroInstruction("SW_0", mc(ControlSignal.RS1_TO_A), SW_1),
+        SW_1: MicroInstruction("SW_1", mc(ControlSignal.IMM16_TO_B), SW_2),
+        SW_2: MicroInstruction(
+            "SW_2",
+            mc(ControlSignal.A_PLUS_B_TO_MAR),
+            SW_3,
+        ),
+        SW_3: MicroInstruction("SW_3", mc(ControlSignal.RD_TO_MDR), SW_4),
+        SW_4: MicroInstruction("SW_4", mc(ControlSignal.MDR_TO_MEMORY), FETCH_0),
+        J_0: MicroInstruction("J_0", mc(ControlSignal.PC_TO_A), J_1),
+        J_1: MicroInstruction("J_1", mc(ControlSignal.OFFSET24_TO_B), J_2),
+        J_2: MicroInstruction(
+            "J_2",
+            mc(ControlSignal.A_PLUS_B_TO_PC),
+            FETCH_0,
+        ),
+        BEQZ_0: MicroInstruction("BEQZ_0", mc(ControlSignal.RD_TO_A), BEQZ_1),
+        BEQZ_1: MicroInstruction(
+            "BEQZ_1",
+            mc(ControlSignal.PC_PLUS_OFFSET20_IF_A_ZERO),
+            BEQZ_2,
+        ),
+        BEQZ_2: MicroInstruction("BEQZ_2", mc(), FETCH_0),
+        BNEZ_0: MicroInstruction("BNEZ_0", mc(ControlSignal.RD_TO_A), BNEZ_1),
+        BNEZ_1: MicroInstruction(
+            "BNEZ_1",
+            mc(ControlSignal.PC_PLUS_OFFSET20_IF_A_NOT_ZERO),
+            BNEZ_2,
+        ),
+        BNEZ_2: MicroInstruction("BNEZ_2", mc(), FETCH_0),
+        JAL_0: MicroInstruction("JAL_0", mc(ControlSignal.PC_TO_RD), JAL_1),
+        JAL_1: MicroInstruction("JAL_1", mc(ControlSignal.PC_TO_A), JAL_2),
+        JAL_2: MicroInstruction("JAL_2", mc(ControlSignal.OFFSET20_TO_B), JAL_3),
+        JAL_3: MicroInstruction(
+            "JAL_3",
+            mc(ControlSignal.A_PLUS_B_TO_PC),
+            FETCH_0,
+        ),
+        JR_0: MicroInstruction("JR_0", mc(ControlSignal.RD_TO_A), JR_1),
+        JR_1: MicroInstruction("JR_1", mc(ControlSignal.A_TO_PC), FETCH_0),
+        JALR_0: MicroInstruction("JALR_0", mc(ControlSignal.RS1_TO_A), JALR_1),
+        JALR_1: MicroInstruction("JALR_1", mc(ControlSignal.PC_TO_RD), JALR_2),
+        JALR_2: MicroInstruction("JALR_2", mc(ControlSignal.A_TO_PC), FETCH_0),
+        VLW_0: MicroInstruction("VLW_0", mc(ControlSignal.RS1_TO_A), VLW_1),
+        VLW_1: MicroInstruction("VLW_1", mc(ControlSignal.IMM16_TO_B), VLW_2),
+        VLW_2: MicroInstruction(
+            "VLW_2",
+            mc(ControlSignal.A_PLUS_B_TO_MAR),
+            VLW_3,
+        ),
+        VLW_3: MicroInstruction("VLW_3", mc(ControlSignal.VECTOR_LOAD_0), VLW_4),
+        VLW_4: MicroInstruction("VLW_4", mc(ControlSignal.VECTOR_LOAD_1), VLW_5),
+        VLW_5: MicroInstruction("VLW_5", mc(ControlSignal.VECTOR_LOAD_2), VLW_6),
+        VLW_6: MicroInstruction("VLW_6", mc(ControlSignal.VECTOR_LOAD_3), FETCH_0),
+        VSW_0: MicroInstruction("VSW_0", mc(ControlSignal.RS1_TO_A), VSW_1),
+        VSW_1: MicroInstruction("VSW_1", mc(ControlSignal.IMM16_TO_B), VSW_2),
+        VSW_2: MicroInstruction(
+            "VSW_2",
+            mc(ControlSignal.A_PLUS_B_TO_MAR),
+            VSW_3,
+        ),
+        VSW_3: MicroInstruction("VSW_3", mc(ControlSignal.VECTOR_STORE_0), VSW_4),
+        VSW_4: MicroInstruction("VSW_4", mc(ControlSignal.VECTOR_STORE_1), VSW_5),
+        VSW_5: MicroInstruction("VSW_5", mc(ControlSignal.VECTOR_STORE_2), VSW_6),
+        VSW_6: MicroInstruction("VSW_6", mc(ControlSignal.VECTOR_STORE_3), FETCH_0),
+        V_0: MicroInstruction("V_0", mc(ControlSignal.V_OPERATION_TO_VD), V_1),
+        V_1: MicroInstruction("V_1", mc(), FETCH_0),
     }
+
+
+def mc(*signals: ControlSignal) -> int:
+    microcommand = 0
+
+    for signal in signals:
+        microcommand |= 1 << signal.value
+
+    return microcommand
+
+
+def has_signal(microcommand: int, signal: ControlSignal) -> bool:
+    return bool(microcommand & (1 << signal.value))
 
 
 def build_dispatch_table() -> dict[Opcode, int]:
@@ -490,319 +702,6 @@ def build_dispatch_table() -> dict[Opcode, int]:
         table[opcode] = V_0
 
     return table
-
-
-def fetch_0(machine: Machine) -> int:
-    machine.mar = machine.pc & WORD_MASK
-    return FETCH_1
-
-
-def fetch_1(machine: Machine) -> int:
-    machine.mdr = machine.read_memory(machine.mar)
-    return FETCH_2
-
-
-def fetch_2(machine: Machine) -> int:
-    machine.ir = machine.mdr & WORD_MASK
-    machine.pc = (machine.pc + 1) & WORD_MASK
-    return DECODE
-
-
-def decode(machine: Machine) -> int:
-    opcode = machine.opcode()
-
-    if opcode not in machine.dispatch_table:
-        raise RuntimeError(f"No microprogram for opcode: {opcode}")
-
-    return machine.dispatch_table[opcode]
-
-
-def halt_0(machine: Machine) -> None:
-    machine.halted = True
-    return None
-
-
-def lui_0(machine: Machine) -> int:
-    machine.alu = (machine.imm20() << 12) & WORD_MASK
-    return LUI_1
-
-
-def lui_1(machine: Machine) -> int:
-    machine.set_register_by_code(machine.rd(), machine.alu)
-    return FETCH_0
-
-
-def addi_0(machine: Machine) -> int:
-    machine.a = machine.get_register_by_code(machine.rs1())
-    return ADDI_1
-
-
-def addi_1(machine: Machine) -> int:
-    machine.b = machine.imm16()
-    return ADDI_2
-
-
-def addi_2(machine: Machine) -> int:
-    machine.alu = (machine.a + machine.b) & WORD_MASK
-    return ADDI_3
-
-
-def addi_3(machine: Machine) -> int:
-    machine.set_register_by_code(machine.rd(), machine.alu)
-    return FETCH_0
-
-
-def r_0(machine: Machine) -> int:
-    machine.a = machine.get_register_by_code(machine.rs1())
-    return R_1
-
-
-def r_1(machine: Machine) -> int:
-    machine.b = machine.get_register_by_code(machine.rs2())
-    return R_2
-
-
-def r_2(machine: Machine) -> int:
-    machine.alu = machine.run_r_operation() & WORD_MASK
-    return R_3
-
-
-def r_3(machine: Machine) -> int:
-    machine.set_register_by_code(machine.rd(), machine.alu)
-    return FETCH_0
-
-
-def lw_0(machine: Machine) -> int:
-    machine.a = machine.get_register_by_code(machine.rs1())
-    return LW_1
-
-
-def lw_1(machine: Machine) -> int:
-    machine.b = machine.imm16()
-    return LW_2
-
-
-def lw_2(machine: Machine) -> int:
-    machine.mar = (machine.a + machine.b) & WORD_MASK
-    return LW_3
-
-
-def lw_3(machine: Machine) -> int:
-    machine.mdr = machine.read_memory(machine.mar)
-    return LW_4
-
-
-def lw_4(machine: Machine) -> int:
-    machine.set_register_by_code(machine.rd(), machine.mdr)
-    return FETCH_0
-
-
-def sw_0(machine: Machine) -> int:
-    machine.a = machine.get_register_by_code(machine.rs1())
-    return SW_1
-
-
-def sw_1(machine: Machine) -> int:
-    machine.b = machine.imm16()
-    return SW_2
-
-
-def sw_2(machine: Machine) -> int:
-    machine.mar = (machine.a + machine.b) & WORD_MASK
-    return SW_3
-
-
-def sw_3(machine: Machine) -> int:
-    machine.mdr = machine.get_register_by_code(machine.rd())
-    return SW_4
-
-
-def sw_4(machine: Machine) -> int:
-    machine.write_memory(machine.mar, machine.mdr)
-    return FETCH_0
-
-
-def j_0(machine: Machine) -> int:
-    machine.a = machine.pc
-    return J_1
-
-
-def j_1(machine: Machine) -> int:
-    machine.b = machine.offset24()
-    return J_2
-
-
-def j_2(machine: Machine) -> int:
-    machine.pc = (machine.a + machine.b) & WORD_MASK
-    return FETCH_0
-
-
-def beqz_0(machine: Machine) -> int:
-    machine.a = machine.get_register_by_code(machine.rd())
-    return BEQZ_1
-
-
-def beqz_1(machine: Machine) -> int:
-    if machine.a == 0:
-        machine.pc = (machine.pc + machine.offset20()) & WORD_MASK
-
-    return BEQZ_2
-
-
-def beqz_2(machine: Machine) -> int:
-    return FETCH_0
-
-
-def bnez_0(machine: Machine) -> int:
-    machine.a = machine.get_register_by_code(machine.rd())
-    return BNEZ_1
-
-
-def bnez_1(machine: Machine) -> int:
-    if machine.a != 0:
-        machine.pc = (machine.pc + machine.offset20()) & WORD_MASK
-
-    return BNEZ_2
-
-
-def bnez_2(machine: Machine) -> int:
-    return FETCH_0
-
-
-def jal_0(machine: Machine) -> int:
-    machine.set_register_by_code(machine.rd(), machine.pc)
-    return JAL_1
-
-
-def jal_1(machine: Machine) -> int:
-    machine.a = machine.pc
-    return JAL_2
-
-
-def jal_2(machine: Machine) -> int:
-    machine.b = machine.offset20()
-    return JAL_3
-
-
-def jal_3(machine: Machine) -> int:
-    machine.pc = (machine.a + machine.b) & WORD_MASK
-    return FETCH_0
-
-
-def jr_0(machine: Machine) -> int:
-    machine.a = machine.get_register_by_code(machine.rd())
-    return JR_1
-
-
-def jr_1(machine: Machine) -> int:
-    machine.pc = machine.a & WORD_MASK
-    return FETCH_0
-
-
-def jalr_0(machine: Machine) -> int:
-    machine.a = machine.get_register_by_code(machine.rs1())
-    return JALR_1
-
-
-def jalr_1(machine: Machine) -> int:
-    machine.set_register_by_code(machine.rd(), machine.pc)
-    return JALR_2
-
-
-def jalr_2(machine: Machine) -> int:
-    machine.pc = machine.a & WORD_MASK
-    return FETCH_0
-
-
-def vlw_0(machine: Machine) -> int:
-    machine.a = machine.get_register_by_code(machine.rs1())
-    return VLW_1
-
-
-def vlw_1(machine: Machine) -> int:
-    machine.b = machine.imm16()
-    return VLW_2
-
-
-def vlw_2(machine: Machine) -> int:
-    machine.mar = (machine.a + machine.b) & WORD_MASK
-    return VLW_3
-
-
-def vlw_3(machine: Machine) -> int:
-    values = machine.get_vector_register_by_code(machine.rd()).copy()
-    values[0] = machine.read_memory(machine.mar)
-    machine.set_vector_register_by_code(machine.rd(), values)
-    return VLW_4
-
-
-def vlw_4(machine: Machine) -> int:
-    values = machine.get_vector_register_by_code(machine.rd()).copy()
-    values[1] = machine.read_memory(machine.mar + 1)
-    machine.set_vector_register_by_code(machine.rd(), values)
-    return VLW_5
-
-
-def vlw_5(machine: Machine) -> int:
-    values = machine.get_vector_register_by_code(machine.rd()).copy()
-    values[2] = machine.read_memory(machine.mar + 2)
-    machine.set_vector_register_by_code(machine.rd(), values)
-    return VLW_6
-
-
-def vlw_6(machine: Machine) -> int:
-    values = machine.get_vector_register_by_code(machine.rd()).copy()
-    values[3] = machine.read_memory(machine.mar + 3)
-    machine.set_vector_register_by_code(machine.rd(), values)
-    return FETCH_0
-
-
-def vsw_0(machine: Machine) -> int:
-    machine.a = machine.get_register_by_code(machine.rs1())
-    return VSW_1
-
-
-def vsw_1(machine: Machine) -> int:
-    machine.b = machine.imm16()
-    return VSW_2
-
-
-def vsw_2(machine: Machine) -> int:
-    machine.mar = (machine.a + machine.b) & WORD_MASK
-    return VSW_3
-
-
-def vsw_3(machine: Machine) -> int:
-    values = machine.get_vector_register_by_code(machine.rd())
-    machine.write_memory(machine.mar, values[0])
-    return VSW_4
-
-
-def vsw_4(machine: Machine) -> int:
-    values = machine.get_vector_register_by_code(machine.rd())
-    machine.write_memory(machine.mar + 1, values[1])
-    return VSW_5
-
-
-def vsw_5(machine: Machine) -> int:
-    values = machine.get_vector_register_by_code(machine.rd())
-    machine.write_memory(machine.mar + 2, values[2])
-    return VSW_6
-
-
-def vsw_6(machine: Machine) -> int:
-    values = machine.get_vector_register_by_code(machine.rd())
-    machine.write_memory(machine.mar + 3, values[3])
-    return FETCH_0
-
-
-def v_0(machine: Machine) -> int:
-    machine.set_vector_register_by_code(machine.rd(), machine.run_v_operation())
-    return V_1
-
-
-def v_1(machine: Machine) -> int:
-    return FETCH_0
 
 
 def to_signed32(value: int) -> int:
