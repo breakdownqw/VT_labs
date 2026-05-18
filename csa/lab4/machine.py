@@ -248,12 +248,14 @@ class Machine:
         before = self.short_state()
         next_upc = self.execute_microinstruction(micro_instruction)
         after = self.short_state()
+        signals = microcommand_to_text(micro_instruction.microcommand)
 
         if self.log_limit > 0 and len(self.log) < self.log_limit:
             self.log.append(
                 f"TICK {self.tick_count:06d} | "
                 f"uPC={self.upc:03X} | "
                 f"{micro_instruction.name:<10} | "
+                f"signals={signals:<45} | "
                 f"{before} -> {after}"
             )
         elif 0 < self.log_limit == len(self.log):
@@ -676,6 +678,19 @@ def mc(*signals: ControlSignal) -> int:
 
 def has_signal(microcommand: int, signal: ControlSignal) -> bool:
     return bool(microcommand & (1 << signal.value))
+
+
+def microcommand_to_text(microcommand: int) -> str:
+    names = []
+
+    for signal in ControlSignal:
+        if has_signal(microcommand, signal):
+            names.append(signal.name)
+
+    if not names:
+        return "NO_SIGNALS"
+
+    return "|".join(names)
 
 
 def build_dispatch_table() -> dict[Opcode, int]:
