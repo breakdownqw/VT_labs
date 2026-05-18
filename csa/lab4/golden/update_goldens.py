@@ -24,55 +24,55 @@ def main() -> None:
     GOLDEN_DIR.mkdir(exist_ok=True)
 
     cases = [
-        GoldenCase("hello_char", LAB4_DIR / "examples" / "hello_char.fth", "", 100000, 500),
-        GoldenCase("hello_pstr", LAB4_DIR / "examples" / "hello_pstr.fth", "", 100000, 800),
+        GoldenCase("hello_char", LAB4_DIR / "examples" / "hello_char.fs", "", 100000, 500),
+        GoldenCase("hello_pstr", LAB4_DIR / "examples" / "hello_pstr.fs", "", 100000, 800),
         GoldenCase(
             "hello_user_name",
-            LAB4_DIR / "examples" / "hello_user_name.fth",
+            LAB4_DIR / "examples" / "hello_user_name.fs",
             (LAB4_DIR / "examples" / "hello_user_name_input.txt").read_text(encoding="utf-8"),
             100000,
             1200,
         ),
-        GoldenCase("cat", LAB4_DIR / "examples" / "cat.fth", "abc\n", 100000, 1000),
+        GoldenCase("cat", LAB4_DIR / "examples" / "cat.fs", "abc\n", 100000, 1000),
         GoldenCase(
             "execution_token",
-            LAB4_DIR / "examples" / "execution_token.fth",
+            LAB4_DIR / "examples" / "execution_token.fs",
             "",
             100000,
             1000,
         ),
-        GoldenCase("vector_demo", LAB4_DIR / "examples" / "vector_demo.fth", "", 300000, 1500),
-        GoldenCase("vector_ops", LAB4_DIR / "examples" / "vector_ops.fth", "", 300000, 1500),
+        GoldenCase("vector_demo", LAB4_DIR / "examples" / "vector_demo.fs", "", 300000, 1500),
+        GoldenCase("vector_ops", LAB4_DIR / "examples" / "vector_ops.fs", "", 300000, 1500),
         GoldenCase(
             "vector_scalar_add",
-            LAB4_DIR / "examples" / "vector_scalar_add.fth",
+            LAB4_DIR / "examples" / "vector_scalar_add.fs",
             "",
             300000,
             1500,
         ),
         GoldenCase(
             "vector_vector_add",
-            LAB4_DIR / "examples" / "vector_vector_add.fth",
+            LAB4_DIR / "examples" / "vector_vector_add.fs",
             "",
             300000,
             1500,
         ),
         GoldenCase(
             "sort",
-            LAB4_DIR / "examples" / "sort.fth",
+            LAB4_DIR / "examples" / "sort.fs",
             (LAB4_DIR / "examples" / "sort_input.txt").read_text(encoding="utf-8"),
             300000,
             1500,
         ),
         GoldenCase(
             "double_precision",
-            LAB4_DIR / "examples" / "double_precision.fth",
+            LAB4_DIR / "examples" / "double_precision.fs",
             "",
             100000,
             1500,
         ),
-        GoldenCase("print_int", LAB4_DIR / "examples" / "print_int.fth", "", 300000, 1500),
-        GoldenCase("prob1", LAB4_DIR / "examples" / "prob1.fth", "", 100000000, 2000),
+        GoldenCase("print_int", LAB4_DIR / "examples" / "print_int.fs", "", 300000, 1500),
+        GoldenCase("prob1", LAB4_DIR / "examples" / "prob1.fs", "", 100000000, 2000),
     ]
 
     for case in cases:

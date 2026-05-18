@@ -1,4 +1,4 @@
-\ Scalar array addition for comparison with vector_vector_add.fth.
+\ Scalar array addition for comparison with vector_vector_add.fs.
 
 array a 4
 array b 4

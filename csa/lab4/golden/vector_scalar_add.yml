@@ -1,4 +1,4 @@
-in_source: "\\ Scalar array addition for comparison with vector_vector_add.fth.\n\narray a 4\narray b 4\narray c 4\n\n\n:\
+in_source: "\\ Scalar array addition for comparison with vector_vector_add.fs.\n\narray a 4\narray b 4\narray c 4\n\n\n:\
   \ init\n  65 a 0 + !\n  66 a 1 + !\n  67 a 2 + !\n  68 a 3 + !\n\n  1 b 0 + !\n  1 b 1 + !\n  1 b 2 + !\n  1 b 3 + !\n;\n\
   \n\n: print-c\n  c 0 + @ emit\n  c 1 + @ emit\n  c 2 + @ emit\n  c 3 + @ emit\n;\n\n\n: main\n  init\n\n  a 0 + @ b 0 +\
   \ @ + c 0 + !\n  a 1 + @ b 1 + @ + c 1 + !\n  a 2 + @ b 2 + @ + c 2 + !\n  a 3 + @ b 3 + @ + c 3 + !\n\n  print-c\n;\n"
