@@ -165,6 +165,35 @@ class ControlSignal(IntEnum):
     A_PLUS_B_TO_PC = 36
 
 
+@dataclass
+class DataPath:
+    memory: list[int]
+    registers: dict[str, int]
+    vector_registers: dict[str, list[int]]
+    pc: int
+    ir: int
+    ir_loaded: bool
+    mar: int
+    mdr: int
+    a: int
+    b: int
+    alu: int
+    input_buffer: list[int]
+    output_buffer: list[int]
+    input_exhausted: bool
+
+
+@dataclass
+class ControlUnit:
+    upc: int
+    tick_count: int
+    halted: bool
+    log: list[str]
+    log_limit: int
+    control_memory: dict[int, MicroInstruction]
+    dispatch_table: dict[Opcode, int]
+
+
 class Machine:
     def __init__(
         self,
@@ -179,12 +208,12 @@ class Machine:
         if len(program) > memory_size:
             raise ValueError("Program does not fit into memory")
 
-        self.memory = [0] * memory_size
+        memory = [0] * memory_size
 
         for address, word in enumerate(program):
-            self.memory[address] = word & WORD_MASK
+            memory[address] = word & WORD_MASK
 
-        self.registers: dict[str, int] = {
+        registers: dict[str, int] = {
             "zero": 0,
             "ra": 0,
             "sp": start_sp,
@@ -198,35 +227,174 @@ class Machine:
             "t6": 0,
         }
 
-        self.vector_registers: dict[str, list[int]] = {
+        vector_registers: dict[str, list[int]] = {
             "v0": [0] * VECTOR_LENGTH,
             "v1": [0] * VECTOR_LENGTH,
             "v2": [0] * VECTOR_LENGTH,
             "v3": [0] * VECTOR_LENGTH,
         }
 
-        self.pc = start_pc
-        self.ir = 0
-        self.ir_loaded = False
-        self.mar = 0
-        self.mdr = 0
-        self.a = 0
-        self.b = 0
-        self.alu = 0
+        self.data_path = DataPath(
+            memory=memory,
+            registers=registers,
+            vector_registers=vector_registers,
+            pc=start_pc,
+            ir=0,
+            ir_loaded=False,
+            mar=0,
+            mdr=0,
+            a=0,
+            b=0,
+            alu=0,
+            input_buffer=[ord(char) for char in input_text],
+            output_buffer=[],
+            input_exhausted=False,
+        )
+        self.control_unit = ControlUnit(
+            upc=FETCH_0,
+            tick_count=0,
+            halted=False,
+            log=[],
+            log_limit=log_limit,
+            control_memory=build_microcode(),
+            dispatch_table=build_dispatch_table(),
+        )
 
-        self.upc = FETCH_0
-        self.tick_count = 0
-        self.halted = False
-        self.input_exhausted = False
+    @property
+    def memory(self) -> list[int]:
+        return self.data_path.memory
 
-        self.input_buffer = [ord(char) for char in input_text]
-        self.output_buffer: list[int] = []
+    @property
+    def registers(self) -> dict[str, int]:
+        return self.data_path.registers
 
-        self.log: list[str] = []
-        self.log_limit = log_limit
+    @property
+    def vector_registers(self) -> dict[str, list[int]]:
+        return self.data_path.vector_registers
 
-        self.microcode = build_microcode()
-        self.dispatch_table = build_dispatch_table()
+    @property
+    def pc(self) -> int:
+        return self.data_path.pc
+
+    @pc.setter
+    def pc(self, value: int) -> None:
+        self.data_path.pc = value
+
+    @property
+    def ir(self) -> int:
+        return self.data_path.ir
+
+    @ir.setter
+    def ir(self, value: int) -> None:
+        self.data_path.ir = value
+
+    @property
+    def ir_loaded(self) -> bool:
+        return self.data_path.ir_loaded
+
+    @ir_loaded.setter
+    def ir_loaded(self, value: bool) -> None:
+        self.data_path.ir_loaded = value
+
+    @property
+    def mar(self) -> int:
+        return self.data_path.mar
+
+    @mar.setter
+    def mar(self, value: int) -> None:
+        self.data_path.mar = value
+
+    @property
+    def mdr(self) -> int:
+        return self.data_path.mdr
+
+    @mdr.setter
+    def mdr(self, value: int) -> None:
+        self.data_path.mdr = value
+
+    @property
+    def a(self) -> int:
+        return self.data_path.a
+
+    @a.setter
+    def a(self, value: int) -> None:
+        self.data_path.a = value
+
+    @property
+    def b(self) -> int:
+        return self.data_path.b
+
+    @b.setter
+    def b(self, value: int) -> None:
+        self.data_path.b = value
+
+    @property
+    def alu(self) -> int:
+        return self.data_path.alu
+
+    @alu.setter
+    def alu(self, value: int) -> None:
+        self.data_path.alu = value
+
+    @property
+    def input_buffer(self) -> list[int]:
+        return self.data_path.input_buffer
+
+    @property
+    def output_buffer(self) -> list[int]:
+        return self.data_path.output_buffer
+
+    @property
+    def input_exhausted(self) -> bool:
+        return self.data_path.input_exhausted
+
+    @input_exhausted.setter
+    def input_exhausted(self, value: bool) -> None:
+        self.data_path.input_exhausted = value
+
+    @property
+    def upc(self) -> int:
+        return self.control_unit.upc
+
+    @upc.setter
+    def upc(self, value: int) -> None:
+        self.control_unit.upc = value
+
+    @property
+    def tick_count(self) -> int:
+        return self.control_unit.tick_count
+
+    @tick_count.setter
+    def tick_count(self, value: int) -> None:
+        self.control_unit.tick_count = value
+
+    @property
+    def halted(self) -> bool:
+        return self.control_unit.halted
+
+    @halted.setter
+    def halted(self, value: bool) -> None:
+        self.control_unit.halted = value
+
+    @property
+    def log(self) -> list[str]:
+        return self.control_unit.log
+
+    @property
+    def log_limit(self) -> int:
+        return self.control_unit.log_limit
+
+    @property
+    def control_memory(self) -> dict[int, MicroInstruction]:
+        return self.control_unit.control_memory
+
+    @property
+    def microcode(self) -> dict[int, MicroInstruction]:
+        return self.control_memory
+
+    @property
+    def dispatch_table(self) -> dict[Opcode, int]:
+        return self.control_unit.dispatch_table
 
     def run(self, limit: int = 10000) -> str:
         while not self.halted and self.tick_count < limit:
@@ -241,10 +409,10 @@ class Machine:
         if self.halted:
             return
 
-        if self.upc not in self.microcode:
+        if self.upc not in self.control_memory:
             raise RuntimeError(f"Unknown microcode address: 0x{self.upc:03X}")
 
-        micro_instruction = self.microcode[self.upc]
+        micro_instruction = self.control_memory[self.upc]
 
         before = self.short_state()
         next_upc = self.execute_microinstruction(micro_instruction)
@@ -256,7 +424,7 @@ class Machine:
                 f"TICK {self.tick_count:06d} | "
                 f"uPC={self.upc:03X} | "
                 f"{micro_instruction.name:<10} | "
-                f"signals={signals:<32} | "
+                f"signals={signals:<45} | "
                 f"{before} -> {after}"
             )
         elif 0 < self.log_limit == len(self.log):
