@@ -32,8 +32,14 @@ var carry
 
   add64
 
+  'h' emit
+  'i' emit
+  '=' emit
   r_hi @ .
   ' ' emit
+  'l' emit
+  'o' emit
+  '=' emit
   r_lo @ .
   '\n' emit
 ;

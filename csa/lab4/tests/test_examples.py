@@ -34,7 +34,7 @@ def test_cat() -> None:
 
 
 def test_double_precision() -> None:
-    assert run_forth_example("double_precision.fth") == "2 0\n"
+    assert run_forth_example("double_precision.fth") == "hi=2 lo=0\n"
 
 
 def test_print_int() -> None:
