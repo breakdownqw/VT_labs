@@ -256,7 +256,7 @@ class Machine:
                 f"TICK {self.tick_count:06d} | "
                 f"uPC={self.upc:03X} | "
                 f"{micro_instruction.name:<10} | "
-                f"signals={signals:<45} | "
+                f"signals={signals:<32} | "
                 f"{before} -> {after}"
             )
         elif 0 < self.log_limit == len(self.log):
