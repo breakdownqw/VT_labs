@@ -270,6 +270,9 @@ class Translator:
             elif value == "emit":
                 self.emit_emit_char()
 
+            elif value == "type-pstr":
+                self.emit_type_pstr()
+
             elif value == ".":
                 self.need_print_int = True
                 self.emit_print_int()
@@ -569,6 +572,31 @@ class Translator:
         self.emit_pop_to("t1")
         self.emit_load_address("t0", 0x0FF1)
         self.emit(Instruction("sw", ("t1", 0, "t0")))
+
+    def emit_type_pstr(self) -> None:
+        loop_label = self.new_internal_label("type_pstr_loop")
+        end_label = self.new_internal_label("type_pstr_end")
+
+        self.emit_pop_to("t0")
+        self.emit(Instruction("lw", ("t1", 0, "t0")))
+        self.emit(Instruction("addi", ("t2", "zero", 0)))
+
+        self.mark_label(loop_label)
+
+        self.emit(Instruction("slt", ("t3", "t2", "t1")))
+        self.emit_branch("beqz", "t3", end_label)
+
+        self.emit(Instruction("addi", ("t4", "t0", 1)))
+        self.emit(Instruction("add", ("t4", "t4", "t2")))
+        self.emit(Instruction("lw", ("t5", 0, "t4")))
+
+        self.emit_load_address("t6", 0x0FF1)
+        self.emit(Instruction("sw", ("t5", 0, "t6")))
+
+        self.emit(Instruction("addi", ("t2", "t2", 1)))
+        self.emit_jump(loop_label)
+
+        self.mark_label(end_label)
 
     def emit_execute(self) -> None:
         self.emit_pop_to("t0")

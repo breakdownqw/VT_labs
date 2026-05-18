@@ -10,6 +10,9 @@ var r_hi
 var r_lo
 var carry
 
+pstr hi_label "hi="
+pstr lo_label " lo="
+
 
 : add64
   \ low part
@@ -32,14 +35,9 @@ var carry
 
   add64
 
-  'h' emit
-  'i' emit
-  '=' emit
+  hi_label type-pstr
   r_hi @ .
-  ' ' emit
-  'l' emit
-  'o' emit
-  '=' emit
+  lo_label type-pstr
   r_lo @ .
   '\n' emit
 ;
