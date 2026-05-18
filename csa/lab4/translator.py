@@ -458,13 +458,10 @@ class Translator:
 
         buffer_address = self.data_labels[self.print_int_buffer_label]
 
-        
         self.emit_pop_to("t0")
 
-       
         self.emit_branch("beqz", "t0", zero_label)
 
-      
         self.emit(Instruction("slt", ("t4", "t0", "zero")))
         self.emit_branch("beqz", "t4", positive_label)
         self.emit(Instruction("addi", ("t4", "zero", ord("-"))))
@@ -473,55 +470,40 @@ class Translator:
         self.emit(Instruction("sub", ("t0", "zero", "t0")))
         self.mark_label(positive_label)
 
-        
         self.emit_load_address("t1", buffer_address)
 
-        
         self.emit(Instruction("addi", ("t2", "zero", 0)))
 
-        
         self.emit(Instruction("addi", ("t3", "zero", 10)))
 
-       
         self.mark_label(collect_loop)
 
-        
         self.emit_branch("beqz", "t0", collect_end)
 
-        
         self.emit(Instruction("rem", ("t4", "t0", "t3")))
 
-       
         self.emit(Instruction("addi", ("t4", "t4", ord("0"))))
 
-        
         self.emit(Instruction("add", ("t5", "t1", "t2")))
         self.emit(Instruction("sw", ("t4", 0, "t5")))
 
-        
         self.emit(Instruction("div", ("t0", "t0", "t3")))
 
-        
         self.emit(Instruction("addi", ("t2", "t2", 1)))
 
         self.emit_jump(collect_loop)
 
         self.mark_label(collect_end)
 
-        
         self.mark_label(output_loop)
 
-       
         self.emit_branch("beqz", "t2", output_end)
 
-        
         self.emit(Instruction("addi", ("t2", "t2", -1)))
 
-        
         self.emit(Instruction("add", ("t5", "t1", "t2")))
         self.emit(Instruction("lw", ("t4", 0, "t5")))
 
-        
         self.emit_load_address("t6", 0x0FF1)
         self.emit(Instruction("sw", ("t4", 0, "t6")))
 
@@ -530,7 +512,6 @@ class Translator:
         self.mark_label(output_end)
         self.emit_jump(zero_label + "_after")
 
-        
         self.mark_label(zero_label)
         self.emit(Instruction("addi", ("t4", "zero", ord("0"))))
         self.emit_load_address("t6", 0x0FF1)

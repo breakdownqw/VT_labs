@@ -1,0 +1,4 @@
+: main
+  'A' emit
+  halt
+;
