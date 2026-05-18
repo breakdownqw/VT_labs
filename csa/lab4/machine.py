@@ -207,6 +207,7 @@ class Machine:
 
         self.pc = start_pc
         self.ir = 0
+        self.ir_loaded = False
         self.mar = 0
         self.mdr = 0
         self.a = 0
@@ -278,6 +279,7 @@ class Machine:
 
         if has_signal(microcommand, ControlSignal.MDR_TO_IR):
             self.ir = self.mdr & WORD_MASK
+            self.ir_loaded = True
 
         if has_signal(microcommand, ControlSignal.INC_PC):
             self.pc = (self.pc + 1) & WORD_MASK
@@ -406,8 +408,8 @@ class Machine:
         )
 
     def current_instruction_text(self) -> str:
-        if self.ir == 0:
-            return "halt"
+        if not self.ir_loaded:
+            return "-"
 
         try:
             return disassemble_instruction(decode_instruction(self.ir))
