@@ -1,0 +1,13 @@
+/.venv
+/.idea
+/lab4/__pycache__
+/lab4/.pytest_cache
+/lab4/tests/__pycache__
+/lab4/tests/.pytest_cache
+/lab4/tests/pytest.ini
+/lab4/golden/__pycache__
+.pytest_cache
+/lab4/.mypy_cache
+/lab4/.ruff_cache
+/lab4/out
+/lab4/update_out_commands.txt
