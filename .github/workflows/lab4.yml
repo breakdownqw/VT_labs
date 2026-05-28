@@ -3,11 +3,11 @@ name: lab4
 on:
   push:
     paths:
-      - "lab4/**"
+      - "csa/lab4/**"
       - ".github/workflows/lab4.yml"
   pull_request:
     paths:
-      - "lab4/**"
+      - "csa/lab4/**"
       - ".github/workflows/lab4.yml"
 
 jobs:
@@ -16,7 +16,7 @@ jobs:
 
     defaults:
       run:
-        working-directory: lab4
+        working-directory: csa/lab4
 
     steps:
       - name: Checkout
