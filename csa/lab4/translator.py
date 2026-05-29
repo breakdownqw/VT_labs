@@ -4,9 +4,19 @@ import argparse
 from dataclasses import dataclass
 from pathlib import Path
 
-from isa import Instruction, disassemble_program, encode_program, words_to_bytes
+from isa import (
+    INPUT_ADDR,
+    OUTPUT_ADDR,
+    WORD_SIZE_BYTES,
+    Instruction,
+    bytes_to_word,
+    disassemble_program,
+    encode_program,
+    word_to_bytes,
+    words_to_bytes,
+)
 
-DATA_START = 0x0400
+DATA_START = 0x1000
 
 
 @dataclass(frozen=True)
@@ -32,7 +42,7 @@ class PendingAddress:
 @dataclass
 class BuildResult:
     code: list[Instruction]
-    memory_image: list[int]
+    memory_image: bytes
     disasm: str
 
 
@@ -45,7 +55,7 @@ class Translator:
         self.data_labels: dict[str, int] = {}
         self.procedures: dict[str, list[Token]] = {}
 
-        self.data_words: list[int] = []
+        self.data_bytes = bytearray()
 
         self.instructions: list[Instruction] = []
         self.labels: dict[str, int] = {}
@@ -87,6 +97,8 @@ class Translator:
                 self.parse_var()
             elif token.value == "array":
                 self.parse_array()
+            elif token.value == "buffer":
+                self.parse_buffer()
             elif token.value == "pstr":
                 self.parse_pstr()
             elif token.value == ":":
@@ -108,8 +120,9 @@ class Translator:
         if name in self.data_labels:
             raise ValueError(f"Data label is already defined: {name}")
 
+        self.align_data_to_cell()
         self.data_labels[name] = self.current_data_address()
-        self.data_words.append(0)
+        self.append_data_word(0)
 
     def parse_array(self) -> None:
         self.expect_value("array")
@@ -123,10 +136,26 @@ class Translator:
         if name in self.data_labels:
             raise ValueError(f"Data label is already defined: {name}")
 
+        self.align_data_to_cell()
         self.data_labels[name] = self.current_data_address()
 
         for _ in range(size):
-            self.data_words.append(0)
+            self.append_data_word(0)
+
+    def parse_buffer(self) -> None:
+        self.expect_value("buffer")
+        name = self.expect_kind("word").value
+        size_token = self.advance()
+        size = token_to_number(size_token)
+
+        if size <= 0:
+            raise ValueError("Buffer size must be positive")
+
+        if name in self.data_labels:
+            raise ValueError(f"Data label is already defined: {name}")
+
+        self.data_labels[name] = self.current_data_address()
+        self.data_bytes.extend(b"\x00" * size)
 
     def parse_pstr(self) -> None:
         self.expect_value("pstr")
@@ -136,13 +165,13 @@ class Translator:
         if name in self.data_labels:
             raise ValueError(f"Data label is already defined: {name}")
 
+        self.align_data_to_cell()
         self.data_labels[name] = self.current_data_address()
         text = text_token.value
 
-        self.data_words.append(len(text))
-
-        for char in text:
-            self.data_words.append(ord(char))
+        self.append_data_word(len(text))
+        self.data_bytes.extend(ord(char) for char in text)
+        self.align_data_to_cell()
 
     def parse_procedure(self) -> None:
         self.expect_value(":")
@@ -173,11 +202,11 @@ class Translator:
             self.mark_label(name)
 
             self.emit(Instruction("sw", ("ra", 0, "rp")))
-            self.emit(Instruction("addi", ("rp", "rp", 1)))
+            self.emit(Instruction("addi", ("rp", "rp", WORD_SIZE_BYTES)))
 
             self.compile_tokens(body)
 
-            self.emit(Instruction("addi", ("rp", "rp", -1)))
+            self.emit(Instruction("addi", ("rp", "rp", -WORD_SIZE_BYTES)))
             self.emit(Instruction("lw", ("ra", 0, "rp")))
             self.emit(Instruction("jr", ("ra",)))
 
@@ -258,11 +287,23 @@ class Translator:
             elif value == "over":
                 self.emit_over()
 
+            elif value == "cells":
+                self.emit_cells()
+
+            elif value == "cell+":
+                self.emit_cell_plus()
+
             elif value == "@":
                 self.emit_fetch()
 
             elif value == "!":
                 self.emit_store()
+
+            elif value == "c@":
+                self.emit_c_fetch()
+
+            elif value == "c!":
+                self.emit_c_store()
 
             elif value == "read-char":
                 self.emit_read_char()
@@ -417,9 +458,7 @@ class Translator:
             return
 
         self.data_labels[self.print_int_buffer_label] = self.current_data_address()
-
-        for _ in range(self.print_int_buffer_size):
-            self.data_words.append(0)
+        self.data_bytes.extend(b"\x00" * self.print_int_buffer_size)
 
     def emit_push_number(self, value: int) -> None:
         self.emit_load_address("t0", value)
@@ -468,8 +507,8 @@ class Translator:
         self.emit(Instruction("slt", ("t4", "t0", "zero")))
         self.emit_branch("beqz", "t4", positive_label)
         self.emit(Instruction("addi", ("t4", "zero", ord("-"))))
-        self.emit_load_address("t6", 0x0FF1)
-        self.emit(Instruction("sw", ("t4", 0, "t6")))
+        self.emit_load_address("t6", OUTPUT_ADDR)
+        self.emit(Instruction("sb", ("t4", 0, "t6")))
         self.emit(Instruction("sub", ("t0", "zero", "t0")))
         self.mark_label(positive_label)
 
@@ -488,7 +527,7 @@ class Translator:
         self.emit(Instruction("addi", ("t4", "t4", ord("0"))))
 
         self.emit(Instruction("add", ("t5", "t1", "t2")))
-        self.emit(Instruction("sw", ("t4", 0, "t5")))
+        self.emit(Instruction("sb", ("t4", 0, "t5")))
 
         self.emit(Instruction("div", ("t0", "t0", "t3")))
 
@@ -505,10 +544,10 @@ class Translator:
         self.emit(Instruction("addi", ("t2", "t2", -1)))
 
         self.emit(Instruction("add", ("t5", "t1", "t2")))
-        self.emit(Instruction("lw", ("t4", 0, "t5")))
+        self.emit(Instruction("lb", ("t4", 0, "t5")))
 
-        self.emit_load_address("t6", 0x0FF1)
-        self.emit(Instruction("sw", ("t4", 0, "t6")))
+        self.emit_load_address("t6", OUTPUT_ADDR)
+        self.emit(Instruction("sb", ("t4", 0, "t6")))
 
         self.emit_jump(output_loop)
 
@@ -517,17 +556,17 @@ class Translator:
 
         self.mark_label(zero_label)
         self.emit(Instruction("addi", ("t4", "zero", ord("0"))))
-        self.emit_load_address("t6", 0x0FF1)
-        self.emit(Instruction("sw", ("t4", 0, "t6")))
+        self.emit_load_address("t6", OUTPUT_ADDR)
+        self.emit(Instruction("sb", ("t4", 0, "t6")))
 
         self.mark_label(zero_label + "_after")
 
     def emit_push_register(self, register: str) -> None:
         self.emit(Instruction("sw", (register, 0, "sp")))
-        self.emit(Instruction("addi", ("sp", "sp", 1)))
+        self.emit(Instruction("addi", ("sp", "sp", WORD_SIZE_BYTES)))
 
     def emit_pop_to(self, register: str) -> None:
-        self.emit(Instruction("addi", ("sp", "sp", -1)))
+        self.emit(Instruction("addi", ("sp", "sp", -WORD_SIZE_BYTES)))
         self.emit(Instruction("lw", (register, 0, "sp")))
 
     def emit_binary_stack_op(self, instruction_name: str) -> None:
@@ -537,20 +576,31 @@ class Translator:
         self.emit_push_register("t0")
 
     def emit_dup(self) -> None:
-        self.emit(Instruction("lw", ("t0", -1, "sp")))
+        self.emit(Instruction("lw", ("t0", -WORD_SIZE_BYTES, "sp")))
         self.emit_push_register("t0")
 
     def emit_drop(self) -> None:
-        self.emit(Instruction("addi", ("sp", "sp", -1)))
+        self.emit(Instruction("addi", ("sp", "sp", -WORD_SIZE_BYTES)))
 
     def emit_swap(self) -> None:
-        self.emit(Instruction("lw", ("t0", -1, "sp")))
-        self.emit(Instruction("lw", ("t1", -2, "sp")))
-        self.emit(Instruction("sw", ("t0", -2, "sp")))
-        self.emit(Instruction("sw", ("t1", -1, "sp")))
+        self.emit(Instruction("lw", ("t0", -WORD_SIZE_BYTES, "sp")))
+        self.emit(Instruction("lw", ("t1", -2 * WORD_SIZE_BYTES, "sp")))
+        self.emit(Instruction("sw", ("t0", -2 * WORD_SIZE_BYTES, "sp")))
+        self.emit(Instruction("sw", ("t1", -WORD_SIZE_BYTES, "sp")))
 
     def emit_over(self) -> None:
-        self.emit(Instruction("lw", ("t0", -2, "sp")))
+        self.emit(Instruction("lw", ("t0", -2 * WORD_SIZE_BYTES, "sp")))
+        self.emit_push_register("t0")
+
+    def emit_cells(self) -> None:
+        self.emit_pop_to("t0")
+        self.emit(Instruction("addi", ("t1", "zero", WORD_SIZE_BYTES)))
+        self.emit(Instruction("mul", ("t0", "t0", "t1")))
+        self.emit_push_register("t0")
+
+    def emit_cell_plus(self) -> None:
+        self.emit_pop_to("t0")
+        self.emit(Instruction("addi", ("t0", "t0", WORD_SIZE_BYTES)))
         self.emit_push_register("t0")
 
     def emit_fetch(self) -> None:
@@ -563,15 +613,25 @@ class Translator:
         self.emit_pop_to("t0")
         self.emit(Instruction("sw", ("t0", 0, "t1")))
 
+    def emit_c_fetch(self) -> None:
+        self.emit_pop_to("t0")
+        self.emit(Instruction("lb", ("t1", 0, "t0")))
+        self.emit_push_register("t1")
+
+    def emit_c_store(self) -> None:
+        self.emit_pop_to("t1")
+        self.emit_pop_to("t0")
+        self.emit(Instruction("sb", ("t0", 0, "t1")))
+
     def emit_read_char(self) -> None:
-        self.emit_load_address("t0", 0x0FF0)
-        self.emit(Instruction("lw", ("t1", 0, "t0")))
+        self.emit_load_address("t0", INPUT_ADDR)
+        self.emit(Instruction("lb", ("t1", 0, "t0")))
         self.emit_push_register("t1")
 
     def emit_emit_char(self) -> None:
         self.emit_pop_to("t1")
-        self.emit_load_address("t0", 0x0FF1)
-        self.emit(Instruction("sw", ("t1", 0, "t0")))
+        self.emit_load_address("t0", OUTPUT_ADDR)
+        self.emit(Instruction("sb", ("t1", 0, "t0")))
 
     def emit_type_pstr(self) -> None:
         loop_label = self.new_internal_label("type_pstr_loop")
@@ -580,20 +640,20 @@ class Translator:
         self.emit_pop_to("t0")
         self.emit(Instruction("lw", ("t1", 0, "t0")))
         self.emit(Instruction("addi", ("t2", "zero", 0)))
+        self.emit(Instruction("addi", ("t4", "t0", WORD_SIZE_BYTES)))
 
         self.mark_label(loop_label)
 
         self.emit(Instruction("slt", ("t3", "t2", "t1")))
         self.emit_branch("beqz", "t3", end_label)
 
-        self.emit(Instruction("addi", ("t4", "t0", 1)))
-        self.emit(Instruction("add", ("t4", "t4", "t2")))
-        self.emit(Instruction("lw", ("t5", 0, "t4")))
+        self.emit(Instruction("lb", ("t5", 0, "t4")))
 
-        self.emit_load_address("t6", 0x0FF1)
-        self.emit(Instruction("sw", ("t5", 0, "t6")))
+        self.emit_load_address("t6", OUTPUT_ADDR)
+        self.emit(Instruction("sb", ("t5", 0, "t6")))
 
         self.emit(Instruction("addi", ("t2", "t2", 1)))
+        self.emit(Instruction("addi", ("t4", "t4", 1)))
         self.emit_jump(loop_label)
 
         self.mark_label(end_label)
@@ -651,8 +711,8 @@ class Translator:
             if pending.label not in self.labels:
                 raise ValueError(f"Unknown label: {pending.label}")
 
-            target_address = self.labels[pending.label]
-            next_address = pending.instruction_index + 1
+            target_address = self.labels[pending.label] * WORD_SIZE_BYTES
+            next_address = (pending.instruction_index + 1) * WORD_SIZE_BYTES
             offset = target_address - next_address
 
             instruction = self.instructions[pending.instruction_index]
@@ -669,7 +729,7 @@ class Translator:
             if pending.label not in self.labels:
                 raise ValueError(f"Unknown label address: {pending.label}")
 
-            address = self.labels[pending.label]
+            address = self.labels[pending.label] * WORD_SIZE_BYTES
 
             instruction = self.instructions[pending.instruction_index]
             operands = list(instruction.operands)
@@ -680,41 +740,54 @@ class Translator:
                 tuple(operands),
             )
 
-    def build_memory_image(self, code_words: list[int]) -> list[int]:
-        if len(code_words) > DATA_START:
+    def build_memory_image(self, code_words: list[int]) -> bytes:
+        code_bytes = words_to_bytes(code_words)
+
+        if len(code_bytes) > DATA_START:
             raise ValueError(
-                f"Code section is too large: {len(code_words)} words, "
+                f"Code section is too large: {len(code_bytes)} bytes, "
                 f"data starts at 0x{DATA_START:X}"
             )
 
-        total_size = DATA_START + len(self.data_words)
-        memory = [0] * total_size
+        return code_bytes + bytes(DATA_START - len(code_bytes)) + bytes(self.data_bytes)
 
-        for address, word in enumerate(code_words):
-            memory[address] = word
-
-        for index, word in enumerate(self.data_words):
-            memory[DATA_START + index] = word
-
-        return memory
-
-    def build_disasm(self, memory_image: list[int]) -> str:
-        code_words = memory_image[: len(self.instructions)]
+    def build_disasm(self, memory_image: bytes) -> str:
+        code_size = len(self.instructions) * WORD_SIZE_BYTES
+        code_words = [
+            bytes_to_word(memory_image[index : index + WORD_SIZE_BYTES])
+            for index in range(0, code_size, WORD_SIZE_BYTES)
+        ]
         lines = [".text"]
         lines.append(disassemble_program(code_words))
 
-        if self.data_words:
+        if self.data_bytes:
             lines.append("")
             lines.append(".data")
 
-            for index, word in enumerate(self.data_words):
+            for index in range(0, len(self.data_bytes), WORD_SIZE_BYTES):
                 address = DATA_START + index
-                lines.append(f"{address:04X} - {word & 0xFFFFFFFF:08X} - .word {word}")
+                chunk = bytes(self.data_bytes[index : index + WORD_SIZE_BYTES])
+
+                if len(chunk) == WORD_SIZE_BYTES:
+                    word = bytes_to_word(chunk)
+                    lines.append(f"{address:04X} - {word & 0xFFFFFFFF:08X} - .word {word}")
+                else:
+                    hex_bytes = " ".join(f"{byte:02X}" for byte in chunk)
+                    lines.append(f"{address:04X} - {hex_bytes:<11} - .bytes {list(chunk)}")
 
         return "\n".join(lines)
 
     def current_data_address(self) -> int:
-        return DATA_START + len(self.data_words)
+        return DATA_START + len(self.data_bytes)
+
+    def append_data_word(self, value: int) -> None:
+        self.data_bytes.extend(word_to_bytes(value))
+
+    def align_data_to_cell(self) -> None:
+        padding = (-len(self.data_bytes)) % WORD_SIZE_BYTES
+
+        if padding:
+            self.data_bytes.extend(b"\x00" * padding)
 
     def is_end(self) -> bool:
         return self.position >= len(self.tokens)
@@ -912,7 +985,7 @@ def translate_file(source_path: Path, binary_path: Path, disasm_path: Path) -> N
     source = source_path.read_text(encoding="utf-8")
     result = translate_source(source)
 
-    binary_path.write_bytes(words_to_bytes(result.memory_image))
+    binary_path.write_bytes(result.memory_image)
     disasm_path.write_text(result.disasm + "\n", encoding="utf-8")
 
 

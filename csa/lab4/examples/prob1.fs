@@ -6,11 +6,13 @@ var i
 var j
 var step
 var product
+var max_factor
 
 var n
 var original
 var reversed
 var digit
+var ch
 
 
 : palindrome?
@@ -30,10 +32,29 @@ var digit
 ;
 
 
+: read-max-factor
+  0 max_factor !
+
+  begin
+    read-char ch !
+
+    ch @ '\n' =
+    if
+      1
+    else
+      max_factor @ 10 * ch @ '0' - + max_factor !
+      0
+    then
+  until
+;
+
+
 : main
+  read-max-factor
+
   0 best !
 
-  999 i !
+  max_factor @ i !
 
   begin
     i @ 100 >=
@@ -41,10 +62,10 @@ var digit
 
     i @ 11 mod 0 =
     if
-      999 j !
+      max_factor @ j !
       1 step !
     else
-      990 j !
+      max_factor @ 11 / 11 * j !
       11 step !
     then
 

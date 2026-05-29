@@ -6,23 +6,23 @@ array c 4
 
 
 : init
-  65 a 0 + !
-  66 a 1 + !
-  67 a 2 + !
-  68 a 3 + !
+  65 a !
+  66 a cell+ !
+  67 a 2 cells + !
+  68 a 3 cells + !
 
-  1 b 0 + !
-  1 b 1 + !
-  1 b 2 + !
-  1 b 3 + !
+  1 b !
+  1 b cell+ !
+  1 b 2 cells + !
+  1 b 3 cells + !
 ;
 
 
 : print-c
-  c 0 + @ emit
-  c 1 + @ emit
-  c 2 + @ emit
-  c 3 + @ emit
+  c @ emit
+  c cell+ @ emit
+  c 2 cells + @ emit
+  c 3 cells + @ emit
 ;
 
 

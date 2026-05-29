@@ -8,26 +8,26 @@ array result 4
 
 
 : init
-  8 a 0 + !
-  6 a 1 + !
-  4 a 2 + !
-  2 a 3 + !
+  8 a !
+  6 a cell+ !
+  4 a 2 cells + !
+  2 a 3 cells + !
 
-  2 b 0 + !
-  2 b 1 + !
-  4 b 2 + !
-  1 b 3 + !
+  2 b !
+  2 b cell+ !
+  4 b 2 cells + !
+  1 b 3 cells + !
 ;
 
 
 : print-result
-  result 0 + @ .
+  result @ .
   ' ' emit
-  result 1 + @ .
+  result cell+ @ .
   ' ' emit
-  result 2 + @ .
+  result 2 cells + @ .
   ' ' emit
-  result 3 + @ .
+  result 3 cells + @ .
   '\n' emit
 ;
 

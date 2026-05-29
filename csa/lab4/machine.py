@@ -10,13 +10,15 @@ from isa import (
     OUTPUT_ADDR,
     VECTOR_LENGTH,
     WORD_MASK,
+    WORD_SIZE_BYTES,
     Opcode,
-    bytes_to_words,
+    bytes_to_word,
     decode_instruction,
     disassemble_instruction,
     register_name,
     sign_extend,
     vector_register_name,
+    word_to_bytes,
 )
 
 FETCH_0 = 0x000
@@ -50,6 +52,18 @@ SW_1 = 0x061
 SW_2 = 0x062
 SW_3 = 0x063
 SW_4 = 0x064
+
+LB_0 = 0x065
+LB_1 = 0x066
+LB_2 = 0x067
+LB_3 = 0x068
+LB_4 = 0x069
+
+SB_0 = 0x06A
+SB_1 = 0x06B
+SB_2 = 0x06C
+SB_3 = 0x06D
+SB_4 = 0x06E
 
 J_0 = 0x070
 J_1 = 0x071
@@ -163,11 +177,13 @@ class ControlSignal(IntEnum):
     V_OPERATION_TO_VD = 34
     A_PLUS_B_TO_MAR = 35
     A_PLUS_B_TO_PC = 36
+    MEMORY_BYTE_TO_MDR = 37
+    MDR_BYTE_TO_MEMORY = 38
 
 
 @dataclass
 class DataPath:
-    memory: list[int]
+    memory: bytearray
     registers: dict[str, int]
     vector_registers: dict[str, list[int]]
     pc: int
@@ -197,21 +213,22 @@ class ControlUnit:
 class Machine:
     def __init__(
         self,
-        program: list[int],
+        program: bytes,
         input_text: str = "",
-        memory_size: int = 4096,
+        memory_size: int = 0x4000,
         start_pc: int = 0,
-        start_sp: int = 0x0800,
-        start_rp: int = 0x0C00,
+        start_sp: int = 0x2000,
+        start_rp: int = 0x3000,
         log_limit: int = 10000,
     ) -> None:
+        if memory_size % WORD_SIZE_BYTES != 0:
+            raise ValueError("Memory size must be divisible by word size")
+
         if len(program) > memory_size:
             raise ValueError("Program does not fit into memory")
 
-        memory = [0] * memory_size
-
-        for address, word in enumerate(program):
-            memory[address] = word & WORD_MASK
+        memory = bytearray(memory_size)
+        memory[: len(program)] = program
 
         registers: dict[str, int] = {
             "zero": 0,
@@ -261,7 +278,7 @@ class Machine:
         )
 
     @property
-    def memory(self) -> list[int]:
+    def memory(self) -> bytearray:
         return self.data_path.memory
 
     @property
@@ -445,12 +462,15 @@ class Machine:
         if has_signal(microcommand, ControlSignal.MEMORY_TO_MDR):
             self.mdr = self.read_memory(self.mar)
 
+        if has_signal(microcommand, ControlSignal.MEMORY_BYTE_TO_MDR):
+            self.mdr = self.read_byte(self.mar)
+
         if has_signal(microcommand, ControlSignal.MDR_TO_IR):
             self.ir = self.mdr & WORD_MASK
             self.ir_loaded = True
 
         if has_signal(microcommand, ControlSignal.INC_PC):
-            self.pc = (self.pc + 1) & WORD_MASK
+            self.pc = (self.pc + WORD_SIZE_BYTES) & WORD_MASK
 
         if has_signal(microcommand, ControlSignal.DISPATCH):
             opcode = self.opcode()
@@ -509,6 +529,9 @@ class Machine:
         if has_signal(microcommand, ControlSignal.MDR_TO_MEMORY):
             self.write_memory(self.mar, self.mdr)
 
+        if has_signal(microcommand, ControlSignal.MDR_BYTE_TO_MEMORY):
+            self.write_byte(self.mar, self.mdr)
+
         if has_signal(microcommand, ControlSignal.PC_TO_A):
             self.a = self.pc
 
@@ -546,7 +569,7 @@ class Machine:
         ):
             if has_signal(microcommand, signal):
                 values = self.get_vector_register_by_code(self.rd()).copy()
-                values[index] = self.read_memory(self.mar + index)
+                values[index] = self.read_memory(self.mar + index * WORD_SIZE_BYTES)
                 self.set_vector_register_by_code(self.rd(), values)
 
         for signal, index in (
@@ -557,7 +580,7 @@ class Machine:
         ):
             if has_signal(microcommand, signal):
                 values = self.get_vector_register_by_code(self.rd())
-                self.write_memory(self.mar + index, values[index])
+                self.write_memory(self.mar + index * WORD_SIZE_BYTES, values[index])
 
     def short_state(self) -> str:
         instruction_text = self.current_instruction_text()
@@ -572,7 +595,9 @@ class Machine:
             f"ALU={self.alu:08X} "
             f"SP={self.registers['sp']:04X} "
             f"RP={self.registers['rp']:04X} "
-            f"INST={instruction_text}"
+            f"INST={instruction_text} "
+            f"IN={self.format_stream(self.input_buffer)} "
+            f"OUT={self.format_stream(self.output_buffer)}"
         )
 
     def current_instruction_text(self) -> str:
@@ -587,7 +612,25 @@ class Machine:
     def output_text(self) -> str:
         return "".join(chr(value & 0xFF) for value in self.output_buffer)
 
+    @staticmethod
+    def format_stream(values: list[int]) -> str:
+        text = "".join(chr(value & 0xFF) for value in values)
+        return repr(text)
+
     def read_memory(self, address: int) -> int:
+        address &= WORD_MASK
+
+        self.check_memory_address(address)
+        return bytes_to_word(bytes(self.memory[address : address + WORD_SIZE_BYTES]))
+
+    def write_memory(self, address: int, value: int) -> None:
+        address &= WORD_MASK
+        value &= WORD_MASK
+
+        self.check_memory_address(address)
+        self.memory[address : address + WORD_SIZE_BYTES] = word_to_bytes(value)
+
+    def read_byte(self, address: int) -> int:
         address &= WORD_MASK
 
         if address == INPUT_ADDR:
@@ -598,21 +641,28 @@ class Machine:
 
             return self.input_buffer.pop(0)
 
-        self.check_memory_address(address)
+        self.check_byte_address(address)
         return self.memory[address]
 
-    def write_memory(self, address: int, value: int) -> None:
+    def write_byte(self, address: int, value: int) -> None:
         address &= WORD_MASK
-        value &= WORD_MASK
+        value &= 0xFF
 
         if address == OUTPUT_ADDR:
-            self.output_buffer.append(value & 0xFF)
+            self.output_buffer.append(value)
             return
 
-        self.check_memory_address(address)
+        self.check_byte_address(address)
         self.memory[address] = value
 
     def check_memory_address(self, address: int) -> None:
+        if address % WORD_SIZE_BYTES != 0:
+            raise RuntimeError(f"Unaligned memory address: 0x{address:X}")
+
+        if not 0 <= address <= len(self.memory) - WORD_SIZE_BYTES:
+            raise RuntimeError(f"Memory address is out of range: 0x{address:X}")
+
+    def check_byte_address(self, address: int) -> None:
         if not 0 <= address < len(self.memory):
             raise RuntimeError(f"Memory address is out of range: 0x{address:X}")
 
@@ -776,6 +826,24 @@ def build_microcode() -> dict[int, MicroInstruction]:
         ),
         SW_3: MicroInstruction("SW_3", mc(ControlSignal.RD_TO_MDR), SW_4),
         SW_4: MicroInstruction("SW_4", mc(ControlSignal.MDR_TO_MEMORY), FETCH_0),
+        LB_0: MicroInstruction("LB_0", mc(ControlSignal.RS1_TO_A), LB_1),
+        LB_1: MicroInstruction("LB_1", mc(ControlSignal.IMM16_TO_B), LB_2),
+        LB_2: MicroInstruction(
+            "LB_2",
+            mc(ControlSignal.A_PLUS_B_TO_MAR),
+            LB_3,
+        ),
+        LB_3: MicroInstruction("LB_3", mc(ControlSignal.MEMORY_BYTE_TO_MDR), LB_4),
+        LB_4: MicroInstruction("LB_4", mc(ControlSignal.MDR_TO_RD), FETCH_0),
+        SB_0: MicroInstruction("SB_0", mc(ControlSignal.RS1_TO_A), SB_1),
+        SB_1: MicroInstruction("SB_1", mc(ControlSignal.IMM16_TO_B), SB_2),
+        SB_2: MicroInstruction(
+            "SB_2",
+            mc(ControlSignal.A_PLUS_B_TO_MAR),
+            SB_3,
+        ),
+        SB_3: MicroInstruction("SB_3", mc(ControlSignal.RD_TO_MDR), SB_4),
+        SB_4: MicroInstruction("SB_4", mc(ControlSignal.MDR_BYTE_TO_MEMORY), FETCH_0),
         J_0: MicroInstruction("J_0", mc(ControlSignal.PC_TO_A), J_1),
         J_1: MicroInstruction("J_1", mc(ControlSignal.OFFSET24_TO_B), J_2),
         J_2: MicroInstruction(
@@ -870,6 +938,8 @@ def build_dispatch_table() -> dict[Opcode, int]:
         Opcode.ADDI: ADDI_0,
         Opcode.LW: LW_0,
         Opcode.SW: SW_0,
+        Opcode.LB: LB_0,
+        Opcode.SB: SB_0,
         Opcode.J: J_0,
         Opcode.BEQZ: BEQZ_0,
         Opcode.BNEZ: BNEZ_0,
@@ -898,16 +968,16 @@ def to_signed32(value: int) -> int:
     return value
 
 
-def load_program_from_file(path: str) -> list[int]:
+def load_program_from_file(path: str) -> bytes:
     with open(path, "rb") as file:
-        return bytes_to_words(file.read())
+        return file.read()
 
 
 def run_program(
-    program: list[int],
+    program: bytes,
     input_text: str = "",
     limit: int = 10000,
-    memory_size: int = 4096,
+    memory_size: int = 0x4000,
 ) -> tuple[str, str]:
     machine = Machine(program, input_text=input_text, memory_size=memory_size)
     stdout = machine.run(limit=limit)
@@ -996,8 +1066,8 @@ def main() -> None:
     parser.add_argument(
         "--memory-size",
         type=int,
-        default=4096,
-        help="Memory size in machine words",
+        default=0x4000,
+        help="Memory size in bytes",
     )
 
     args = parser.parse_args()

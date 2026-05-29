@@ -37,7 +37,7 @@ var temp
   begin
     i @ n @ <
   while
-    read-digit nums i @ + !
+    read-digit nums i @ cells + !
     i @ 1 + i !
   repeat
 ;
@@ -56,17 +56,17 @@ var temp
       j @ n @ 1 - i @ - <
     while
 
-      nums j @ + @
-      nums j @ 1 + + @
+      nums j @ cells + @
+      nums j @ cells + cell+ @
       >
       if
-        nums j @ + @ temp !
+        nums j @ cells + @ temp !
 
-        nums j @ 1 + + @
-        nums j @ + !
+        nums j @ cells + cell+ @
+        nums j @ cells + !
 
         temp @
-        nums j @ 1 + + !
+        nums j @ cells + cell+ !
       then
 
       j @ 1 + j !
@@ -83,7 +83,7 @@ var temp
   begin
     i @ n @ <
   while
-    nums i @ + @ .
+    nums i @ cells + @ .
 
     i @ n @ 1 - <
     if

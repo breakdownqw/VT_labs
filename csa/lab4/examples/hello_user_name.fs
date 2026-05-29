@@ -2,7 +2,7 @@ pstr question "What is your name?"
 pstr greeting "Hello, "
 pstr exclamation "!"
 
-array name 32
+buffer name 32
 
 var len
 var index
@@ -19,7 +19,7 @@ var index
       drop
       1
     else
-      name len @ + !
+      name len @ + c!
       len @ 1 + len !
       0
     then
@@ -33,7 +33,7 @@ var index
   begin
     index @ len @ <
   while
-    name index @ + @ emit
+    name index @ + c@ emit
     index @ 1 + index !
   repeat
 ;

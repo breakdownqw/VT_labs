@@ -9,8 +9,8 @@ WORD_MASK = 0xFFFFFFFF
 
 VECTOR_LENGTH = 4
 
-INPUT_ADDR = 0x0FF0
-OUTPUT_ADDR = 0x0FF1
+INPUT_ADDR = 0x3FC0
+OUTPUT_ADDR = 0x3FC4
 
 
 class Opcode(IntEnum):
@@ -34,6 +34,8 @@ class Opcode(IntEnum):
 
     LW = 0x40
     SW = 0x41
+    LB = 0x42
+    SB = 0x43
 
     J = 0x50
     BEQZ = 0x51
@@ -121,6 +123,8 @@ MNEMONIC_TO_OPCODE: dict[str, Opcode] = {
     "sltu": Opcode.SLTU,
     "lw": Opcode.LW,
     "sw": Opcode.SW,
+    "lb": Opcode.LB,
+    "sb": Opcode.SB,
     "j": Opcode.J,
     "beqz": Opcode.BEQZ,
     "bnez": Opcode.BNEZ,
@@ -183,14 +187,14 @@ def encode_instruction(instruction: Instruction) -> int:
         rs2 = register_code(operands[2])
         return ((int(opcode) << 24) | (rd << 20) | (rs1 << 16) | (rs2 << 12)) & WORD_MASK
 
-    if mnemonic == "lw":
+    if mnemonic in {"lw", "lb"}:
         require_operand_count(mnemonic, operands, 3)
         rd = register_code(operands[0])
         offset = signed_immediate(operands[1], bits=16)
         rs1 = register_code(operands[2])
         return ((int(opcode) << 24) | (rd << 20) | (rs1 << 16) | offset) & WORD_MASK
 
-    if mnemonic == "sw":
+    if mnemonic in {"sw", "sb"}:
         require_operand_count(mnemonic, operands, 3)
         rs2 = register_code(operands[0])
         offset = signed_immediate(operands[1], bits=16)
@@ -284,17 +288,17 @@ def decode_instruction(word: int) -> Instruction:
             (register_name(rd), register_name(rs1), register_name(rs2)),
         )
 
-    if mnemonic == "lw":
+    if mnemonic in {"lw", "lb"}:
         rd = (word >> 20) & 0xF
         rs1 = (word >> 16) & 0xF
         offset = sign_extend(word & 0xFFFF, bits=16)
-        return Instruction("lw", (register_name(rd), offset, register_name(rs1)))
+        return Instruction(mnemonic, (register_name(rd), offset, register_name(rs1)))
 
-    if mnemonic == "sw":
+    if mnemonic in {"sw", "sb"}:
         rs2 = (word >> 20) & 0xF
         rs1 = (word >> 16) & 0xF
         offset = sign_extend(word & 0xFFFF, bits=16)
-        return Instruction("sw", (register_name(rs2), offset, register_name(rs1)))
+        return Instruction(mnemonic, (register_name(rs2), offset, register_name(rs1)))
 
     if mnemonic == "j":
         offset = sign_extend(word & 0xFFFFFF, bits=24)
@@ -370,13 +374,13 @@ def disassemble_instruction(instruction: Instruction) -> str:
         rd, rs1, imm16 = operands
         return f"addi {rd}, {rs1}, {format_number(imm16)}"
 
-    if mnemonic == "lw":
+    if mnemonic in {"lw", "lb"}:
         rd, offset, rs1 = operands
-        return f"lw {rd}, {format_number(offset)}({rs1})"
+        return f"{mnemonic} {rd}, {format_number(offset)}({rs1})"
 
-    if mnemonic == "sw":
+    if mnemonic in {"sw", "sb"}:
         rs2, offset, rs1 = operands
-        return f"sw {rs2}, {format_number(offset)}({rs1})"
+        return f"{mnemonic} {rs2}, {format_number(offset)}({rs1})"
 
     if mnemonic == "j":
         (offset,) = operands
@@ -418,7 +422,8 @@ def disassemble_word(address: int, word: int) -> str:
 def disassemble_program(words: Iterable[int]) -> str:
     lines = []
 
-    for address, word in enumerate(words):
+    for index, word in enumerate(words):
+        address = index * WORD_SIZE_BYTES
         lines.append(disassemble_word(address, word))
 
     return "\n".join(lines)

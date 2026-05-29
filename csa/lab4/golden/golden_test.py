@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import pytest
 import yaml
@@ -10,6 +11,17 @@ from translator import translate_source
 
 GOLDEN_DIR = Path(__file__).resolve().parent
 LAB4_DIR = GOLDEN_DIR.parent
+
+
+class LiteralString(str):
+    pass
+
+
+def represent_literal_string(dumper: Any, data: LiteralString) -> Any:
+    return dumper.represent_scalar("tag:yaml.org,2002:str", data, style="|")
+
+
+yaml.add_representer(LiteralString, represent_literal_string, Dumper=yaml.SafeDumper)
 
 
 CASES = [
@@ -106,7 +118,7 @@ def update_golden(
     source = source_path.read_text(encoding="utf-8")
     actual = run_case(source, stdin, limit, log_limit)
 
-    data = {
+    data: dict[str, Any] = {
         "in_source": source,
         "in_stdin": stdin,
         "limit": limit,
@@ -116,20 +128,29 @@ def update_golden(
         "out_log": actual["out_log"],
         "out_ticks": actual["out_ticks"],
     }
+    data = {key: yaml_value(value) for key, value in data.items()}
 
     output_path = GOLDEN_DIR / f"{case_name}.yml"
     temp_path = output_path.with_suffix(output_path.suffix + ".tmp")
 
     with temp_path.open("w", encoding="utf-8") as file:
-        yaml.safe_dump(
+        yaml.dump(
             data,
             file,
+            Dumper=yaml.SafeDumper,
             allow_unicode=True,
             sort_keys=False,
             width=120,
         )
 
     temp_path.replace(output_path)
+
+
+def yaml_value(value: Any) -> Any:
+    if isinstance(value, str) and "\n" in value:
+        return LiteralString(value)
+
+    return value
 
 
 def test_placeholder() -> None:

@@ -72,7 +72,7 @@ def main() -> None:
             1500,
         ),
         GoldenCase("print_int", LAB4_DIR / "examples" / "print_int.fs", "", 300000, 1500),
-        GoldenCase("prob1", LAB4_DIR / "examples" / "prob1.fs", "", 100000000, 2000),
+        GoldenCase("prob1", LAB4_DIR / "examples" / "prob1.fs", "999\n", 100000000, 2000),
     ]
 
     for case in cases:
