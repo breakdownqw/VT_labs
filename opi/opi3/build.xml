@@ -1,0 +1,546 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project name="opi3" default="build" basedir=".">
+
+    <property file="build.properties"/>
+    <property environment="env"/>
+
+    <tstamp>
+        <format property="TODAY" pattern="yyyy-MM-dd HH:mm:ss"/>
+    </tstamp>
+
+    <target name="init">
+        <mkdir dir="${build.dir}"/>
+        <mkdir dir="${dist.dir}"/>
+        <mkdir dir="${report.dir}"/>
+    </target>
+
+    <!-- 1. COMPILE: конвертация локализаций + компиляция исходников -->
+    <target name="compile" depends="init,native2ascii" description="Компиляция исходных кодов проекта">
+        <ant antfile="build-jar.xml" target="compile" inheritall="false">
+            <property name="param.src" value="${src.dir}"/>
+            <property name="param.classes" value="${build.dir}/classes"/>
+        </ant>
+    </target>
+
+    <!-- 2. BUILD: compile + упаковка в исполняемый JAR -->
+    <target name="build" depends="compile" description="Компиляция и упаковка в исполняемый JAR">
+        <ant antfile="build-jar.xml" target="build" inheritall="false">
+            <property name="param.src" value="${src.dir}"/>
+            <property name="param.classes" value="${build.dir}/classes"/>
+            <property name="param.name" value="${project.name}"/>
+            <property name="param.main" value="${main.class}"/>
+        </ant>
+    </target>
+
+    <!-- 3. CLEAN -->
+    <target name="clean" description="Удаление скомпилированных классов и временных файлов">
+        <delete dir="${build.dir}" quiet="true"/>
+        <delete dir="${dist.dir}" quiet="true"/>
+        <delete dir="${doc.dir}" quiet="true"/>
+        <delete dir="${report.dir}" quiet="true"/>
+        <delete dir="${tmp.dir}" quiet="true"/>
+        <echo message="[CLEAN] Очистка завершена"/>
+    </target>
+
+    <!-- 4. TEST: build + компиляция и запуск JUnit-тестов -->
+    <target name="compile-test" depends="build">
+        <mkdir dir="${build.dir}/test-classes"/>
+        <javac srcdir="${test.dir}"
+               destdir="${build.dir}/test-classes"
+               source="${compiler.source}"
+               target="${compiler.target}"
+               includeantruntime="false"
+               encoding="UTF-8"
+               debug="true">
+            <classpath>
+                <pathelement path="${build.dir}/classes"/>
+                <fileset dir="${lib.dir}" includes="**/*.jar"/>
+            </classpath>
+        </javac>
+    </target>
+
+    <target name="test" depends="compile-test" description="Запуск JUnit-тестов">
+        <mkdir dir="${report.dir}/junit"/>
+        <junit printsummary="yes" haltonfailure="true" haltonerror="true" fork="true">
+            <classpath>
+                <pathelement path="${build.dir}/classes"/>
+                <pathelement path="${build.dir}/test-classes"/>
+                <fileset dir="${lib.dir}" includes="**/*.jar"/>
+            </classpath>
+            <formatter type="xml"/>
+            <formatter type="plain" usefile="false"/>
+            <batchtest todir="${report.dir}/junit">
+                <fileset dir="${build.dir}/test-classes" includes="**/*Test.class"/>
+            </batchtest>
+        </junit>
+        <echo message="[TEST] Тесты прошли. XML-отчёты: ${report.dir}/junit"/>
+    </target>
+
+    <!-- 5. XML: валидация всех XML-файлов проекта -->
+    <target name="xml" description="Валидация XML-файлов">
+        <xmlvalidate lenient="yes">
+            <fileset dir="." includes="**/*.xml"
+                     excludes=".git/**,build/**,dist/**,doc/**,reports/**,tmp/**,target/**"/>
+        </xmlvalidate>
+        <echo message="[XML] Валидация XML завершена"/>
+    </target>
+
+    <!-- 6. DOC: Javadoc + MD5/SHA-1 в MANIFEST.MF + добавление javadoc в JAR -->
+    <target name="doc" depends="build" description="Javadoc и контрольные суммы">
+        <mkdir dir="${doc.dir}/javadoc"/>
+        <javadoc sourcepath="${src.dir}"
+                 destdir="${doc.dir}/javadoc"
+                 author="true"
+                 version="true"
+                 encoding="UTF-8"
+                 charset="UTF-8"
+                 docencoding="UTF-8"
+                 failonerror="false"
+                 windowtitle="${project.name} API">
+            <classpath>
+                <fileset dir="${lib.dir}" includes="**/*.jar"/>
+            </classpath>
+        </javadoc>
+
+        <mkdir dir="${doc.dir}/checksums"/>
+        <checksum algorithm="MD5" totalproperty="project.md5" todir="${doc.dir}/checksums">
+            <fileset dir="." includes="src/**/*,build.xml,build-jar.xml,build.properties"
+                     excludes="build/**,dist/**,doc/**,reports/**,tmp/**,.git/**,**/*.MD5,**/*.SHA-1"/>
+        </checksum>
+        <checksum algorithm="SHA-1" totalproperty="project.sha1" todir="${doc.dir}/checksums">
+            <fileset dir="." includes="src/**/*,build.xml,build-jar.xml,build.properties"
+                     excludes="build/**,dist/**,doc/**,reports/**,tmp/**,.git/**,**/*.MD5,**/*.SHA-1"/>
+        </checksum>
+
+        <manifest file="${build.dir}/MANIFEST.MF" mode="update">
+            <attribute name="Project-MD5" value="${project.md5}"/>
+            <attribute name="Project-SHA1" value="${project.sha1}"/>
+        </manifest>
+
+        <jar destfile="${dist.dir}/${project.name}.jar"
+             manifest="${build.dir}/MANIFEST.MF"
+             update="true">
+            <fileset dir="${doc.dir}" includes="javadoc/**"/>
+        </jar>
+        <echo message="[DOC] Javadoc и контрольные суммы добавлены в JAR"/>
+    </target>
+
+    <!-- 7. NATIVE2ASCII -->
+    <target name="native2ascii" description="Преобразование файлов локализации">
+        <mkdir dir="${native.dest.dir}"/>
+        <native2ascii src="${native.src.dir}"
+                      dest="${native.dest.dir}"
+                      includes="*.properties"
+                      ext=".properties"
+                      encoding="UTF-8"/>
+        <echo message="[NATIVE2ASCII] Локализации скопированы в ${native.dest.dir}"/>
+    </target>
+
+    <!-- 8. SCP: build + отправка JAR на сервер -->
+    <target name="scp" depends="build" description="Отправка JAR по SCP">
+        <tstamp>
+            <format property="scp.timestamp" pattern="yyyy-MM-dd_HH-mm-ss"/>
+        </tstamp>
+        <exec executable="scp" failonerror="false" resultproperty="scp.result">
+            <arg line="${scp.ssh.options}"/>
+            <arg value="-P"/>
+            <arg value="${scp.port}"/>
+            <arg value="${dist.dir}/${project.name}.jar"/>
+            <arg value="${scp.user}@${scp.server}:${scp.path}/${project.name}-${scp.timestamp}.jar"/>
+        </exec>
+        <condition property="scp.ok"><equals arg1="${scp.result}" arg2="0"/></condition>
+        <antcall target="-scp-success"/>
+        <antcall target="-scp-failed"/>
+    </target>
+
+    <target name="-scp-success" if="scp.ok">
+        <echo message="[SCP] Файл отправлен"/>
+    </target>
+
+    <target name="-scp-failed" unless="scp.ok">
+        <echo message="[SCP] Не удалось отправить файл. Код: ${scp.result}"/>
+    </target>
+
+    <!-- 9. MUSIC: macOS-версия через afplay -->
+    <target name="music" depends="build" description="Воспроизведение музыки после сборки на macOS">
+        <exec executable="afplay" osfamily="mac" failonerror="false">
+            <arg value="${music.file}"/>
+        </exec>
+        <echo message="[MUSIC] macOS попыталась воспроизвести файл: ${music.file}"/>
+    </target>
+
+    <!-- 10. TEAM: 4 предыдущих git-ревизии, build каждой, общий zip. Без отдельных .sh-файлов. -->
+    <target name="team" depends="clean" description="Сборка 4 предыдущих git-ревизий и упаковка JAR в ZIP">
+        <mkdir dir="${team.dir}"/>
+        <mkdir dir="${dist.dir}"/>
+        <exec executable="git" dir="${basedir}" failonerror="true">
+            <arg value="rev-parse"/>
+            <arg value="--is-inside-work-tree"/>
+        </exec>
+        <antcall target="-team-rev-1"/>
+        <antcall target="-team-rev-2"/>
+        <antcall target="-team-rev-3"/>
+        <antcall target="-team-rev-4"/>
+        <zip destfile="${team.zip}">
+            <fileset dir="${team.dir}" includes="*.jar"/>
+        </zip>
+        <echo message="[TEAM] Архив создан: ${team.zip}"/>
+    </target>
+
+    <target name="-team-rev-1"><antcall target="-team-build-one"><param name="team.index" value="1"/><param name="team.rev" value="HEAD~1"/></antcall></target>
+    <target name="-team-rev-2"><antcall target="-team-build-one"><param name="team.index" value="2"/><param name="team.rev" value="HEAD~2"/></antcall></target>
+    <target name="-team-rev-3"><antcall target="-team-build-one"><param name="team.index" value="3"/><param name="team.rev" value="HEAD~3"/></antcall></target>
+    <target name="-team-rev-4"><antcall target="-team-build-one"><param name="team.index" value="4"/><param name="team.rev" value="HEAD~4"/></antcall></target>
+
+    <target name="-team-build-one">
+        <echo message="[TEAM] Сборка ревизии ${team.rev}"/>
+        <delete dir="${team.dir}/rev${team.index}" quiet="true"/>
+        <mkdir dir="${team.dir}/rev${team.index}"/>
+        <exec executable="git" dir="${basedir}" failonerror="true" outputproperty="team.short.${team.index}">
+            <arg value="rev-parse"/>
+            <arg value="--short"/>
+            <arg value="${team.rev}"/>
+        </exec>
+        <exec executable="git" dir="${basedir}" failonerror="true">
+            <arg value="archive"/>
+            <arg value="--format=zip"/>
+            <arg value="--output"/>
+            <arg value="${team.dir}/rev${team.index}.zip"/>
+            <arg value="${team.rev}"/>
+        </exec>
+        <unzip src="${team.dir}/rev${team.index}.zip" dest="${team.dir}/rev${team.index}"/>
+
+        <!-- Копируем текущую Ant-сборку и зависимости в старую ревизию, чтобы старые коммиты тоже могли собраться. -->
+        <copy file="build.xml" todir="${team.dir}/rev${team.index}" overwrite="true"/>
+        <copy file="build-jar.xml" todir="${team.dir}/rev${team.index}" overwrite="true"/>
+        <copy file="build.properties" todir="${team.dir}/rev${team.index}" overwrite="true"/>
+        <copy todir="${team.dir}/rev${team.index}/${lib.dir}" failonerror="false">
+            <fileset dir="${lib.dir}" includes="**/*.jar"/>
+        </copy>
+        <copy todir="${team.dir}/rev${team.index}/music" failonerror="false">
+            <fileset dir="music"/>
+        </copy>
+
+        <ant antfile="build.xml" dir="${team.dir}/rev${team.index}" target="clean" inheritall="false"/>
+        <ant antfile="build.xml" dir="${team.dir}/rev${team.index}" target="build" inheritall="false"/>
+        <copy file="${team.dir}/rev${team.index}/${dist.dir}/${project.name}.jar"
+              tofile="${team.dir}/${project.name}-${team.rev}.jar"/>
+    </target>
+
+    <!-- 11. REPORT: test + добавление XML-отчёта в SVN + commit -->
+    <target name="report" depends="test" description="JUnit XML report + SVN commit">
+        <exec executable="svn" dir="${svn.workdir}" failonerror="true">
+            <arg value="add"/>
+            <arg value="--parents"/>
+            <arg value="--force"/>
+            <arg value="${svn.report.path}"/>
+        </exec>
+        <exec executable="svn" dir="${svn.workdir}" failonerror="true">
+            <arg value="commit"/>
+            <arg value="-m"/>
+            <arg value="JUnit test report"/>
+            <arg value="${svn.report.path}"/>
+        </exec>
+        <echo message="[REPORT] JUnit-отчёт добавлен и закоммичен в SVN"/>
+    </target>
+
+    <!-- HISTORY: поиск последней компилирующейся git-ревизии + diff -->
+    <target name="history" description="Поиск последней рабочей git-ревизии и сохранение diff">
+        <delete dir="${history.dir}" quiet="true"/>
+        <mkdir dir="${history.dir}"/>
+        <mkdir dir="${dist.dir}"/>
+
+        <exec executable="git" dir="${basedir}" failonerror="true">
+            <arg value="rev-parse"/>
+            <arg value="--is-inside-work-tree"/>
+        </exec>
+
+        <exec executable="git" dir="${basedir}" outputproperty="history.head.rev" failonerror="true">
+            <arg value="rev-parse"/>
+            <arg value="HEAD"/>
+        </exec>
+
+        <echo message="[HISTORY] Стартовая ревизия: ${history.head.rev}"/>
+
+        <ant antfile="${ant.file}" target="-history-loop" inheritall="false">
+            <property name="current.rev" value="${history.head.rev}"/>
+            <property name="broken.rev" value="${history.head.rev}"/>
+        </ant>
+    </target>
+
+
+    <target name="-history-loop">
+        <echo message="[HISTORY] Пробуем ревизию ${current.rev}"/>
+
+        <delete dir="${history.dir}/try" quiet="true"/>
+        <delete file="${history.dir}/try.zip" quiet="true"/>
+        <mkdir dir="${history.dir}/try"/>
+
+        <!-- Экспортируем нужную git-ревизию -->
+        <exec executable="git" dir="${basedir}" failonerror="true">
+            <arg value="archive"/>
+            <arg value="--format=zip"/>
+            <arg value="--output"/>
+            <arg value="${history.dir}/try.zip"/>
+            <arg value="${current.rev}"/>
+        </exec>
+
+        <unzip src="${history.dir}/try.zip" dest="${history.dir}/try"/>
+
+        <!-- Копируем текущие файлы сборки, чтобы старая ревизия собиралась новым Ant-скриптом -->
+        <antcall target="-history-prepare-build"/>
+
+        <!-- Пробуем собрать -->
+        <exec executable="${ant.executable}"
+              dir="${history.dir}/try"
+              resultproperty="history.compile.result"
+              failonerror="false">
+            <arg value="-f"/>
+            <arg value="build.xml"/>
+            <arg value="clean"/>
+            <arg value="compile"/>
+        </exec>
+
+        <condition property="history.success">
+            <equals arg1="${history.compile.result}" arg2="0"/>
+        </condition>
+
+        <antcall target="-history-on-success"/>
+        <antcall target="-history-on-fail"/>
+    </target>
+
+
+    <target name="-history-prepare-build">
+        <copy file="${ant.file}" tofile="${history.dir}/try/build.xml" overwrite="true"/>
+        <copy file="${basedir}/build.properties" tofile="${history.dir}/try/build.properties" overwrite="true"/>
+
+        <available file="${basedir}/build-jar.xml" property="history.has.build.jar"/>
+        <antcall target="-history-copy-build-jar"/>
+
+        <available file="${basedir}/${lib.dir}" type="dir" property="history.has.lib"/>
+        <antcall target="-history-copy-lib"/>
+
+        <available file="${basedir}/music" type="dir" property="history.has.music"/>
+        <antcall target="-history-copy-music"/>
+    </target>
+
+
+    <target name="-history-copy-build-jar" if="history.has.build.jar">
+        <copy file="${basedir}/build-jar.xml"
+              tofile="${history.dir}/try/build-jar.xml"
+              overwrite="true"/>
+    </target>
+
+
+    <target name="-history-copy-lib" if="history.has.lib">
+        <delete dir="${history.dir}/try/${lib.dir}" quiet="true"/>
+        <copy todir="${history.dir}/try/${lib.dir}">
+            <fileset dir="${basedir}/${lib.dir}" includes="**/*.jar"/>
+        </copy>
+    </target>
+
+
+    <target name="-history-copy-music" if="history.has.music">
+        <delete dir="${history.dir}/try/music" quiet="true"/>
+        <copy todir="${history.dir}/try/music">
+            <fileset dir="${basedir}/music"/>
+        </copy>
+    </target>
+
+
+    <target name="-history-on-success" if="history.success">
+        <echo message="[HISTORY] УСПЕХ на ревизии ${current.rev}"/>
+
+        <condition property="history.current-is-head">
+            <equals arg1="${current.rev}" arg2="${broken.rev}"/>
+        </condition>
+
+        <condition property="history.need.diff">
+            <not>
+                <equals arg1="${current.rev}" arg2="${broken.rev}"/>
+            </not>
+        </condition>
+
+        <antcall target="-history-empty-diff"/>
+        <antcall target="-history-make-diff"/>
+    </target>
+
+
+    <target name="-history-empty-diff" if="history.current-is-head">
+        <echo file="${history.diff.file}" message=""/>
+        <echo message="[HISTORY] Текущая ревизия компилируется, diff пустой: ${history.diff.file}"/>
+    </target>
+
+
+    <target name="-history-make-diff" if="history.need.diff">
+        <echo message="[HISTORY] Формирую diff между рабочей ревизией ${current.rev} и сломанной ${broken.rev}"/>
+
+        <exec executable="git"
+              dir="${basedir}"
+              output="${history.diff.file}"
+              failonerror="false">
+            <arg value="diff"/>
+            <arg value="${current.rev}"/>
+            <arg value="${broken.rev}"/>
+        </exec>
+
+        <echo message="[HISTORY] Diff сохранён в ${history.diff.file}"/>
+    </target>
+
+
+    <target name="-history-on-fail" unless="history.success">
+        <echo message="[HISTORY] Ревизия ${current.rev} не компилируется"/>
+
+        <!-- Получаем родителя текущего коммита -->
+        <exec executable="git"
+              dir="${basedir}"
+              outputproperty="parent.rev"
+              resultproperty="parent.rev.result"
+              failonerror="false">
+            <arg value="rev-parse"/>
+            <arg value="${current.rev}^"/>
+        </exec>
+
+        <condition property="history.has.parent">
+            <equals arg1="${parent.rev.result}" arg2="0"/>
+        </condition>
+
+        <antcall target="-history-no-parent"/>
+
+        <!-- Рекурсивно вызываем history-loop уже для предыдущего коммита -->
+        <ant antfile="${ant.file}" target="-history-loop" inheritall="false">
+            <property name="current.rev" value="${parent.rev}"/>
+            <property name="broken.rev" value="${current.rev}"/>
+        </ant>
+    </target>
+
+
+    <target name="-history-no-parent" unless="history.has.parent">
+        <fail message="[HISTORY] Достигнут первый коммит — ни одна ревизия не собирается"/>
+    </target>
+
+    <!-- 13. ENV: сборка и запуск JAR в альтернативных JDK -->
+    <target name="env" depends="native2ascii" description="Сборка и запуск в альтернативных окружениях">
+        <antcall target="-env-one">
+            <param name="env.name" value="java17"/>
+            <param name="env.java.home" value="${env.java17.home}"/>
+            <param name="env.java.args" value="${env.java17.args}"/>
+        </antcall>
+        <antcall target="-env-one">
+            <param name="env.name" value="java21"/>
+            <param name="env.java.home" value="${env.java21.home}"/>
+            <param name="env.java.args" value="${env.java21.args}"/>
+        </antcall>
+    </target>
+
+    <target name="-env-one">
+        <echo message="[ENV] Окружение: ${env.name}, JAVA_HOME=${env.java.home}"/>
+        <available file="${env.java.home}/bin/javac" property="env.jdk.available"/>
+        <fail unless="env.jdk.available" message="[ENV] JDK не найдена: ${env.java.home}"/>
+        <delete dir="${build.dir}/env/${env.name}" quiet="true"/>
+        <mkdir dir="${build.dir}/env/${env.name}/classes"/>
+        <javac srcdir="${src.dir}"
+               destdir="${build.dir}/env/${env.name}/classes"
+               source="${compiler.source}"
+               target="${compiler.target}"
+               includeantruntime="false"
+               fork="true"
+               executable="${env.java.home}/bin/javac"
+               encoding="UTF-8"
+               debug="true">
+            <classpath>
+                <fileset dir="${lib.dir}" includes="**/*.jar"/>
+            </classpath>
+        </javac>
+        <copy todir="${build.dir}/env/${env.name}/classes">
+            <fileset dir="${resources.dir}" excludes="locale/**"/>
+        </copy>
+        <copy todir="${build.dir}/env/${env.name}/classes/locale">
+            <fileset dir="${native.dest.dir}"/>
+        </copy>
+        <manifest file="${build.dir}/env/${env.name}/MANIFEST.MF">
+            <attribute name="Main-Class" value="${main.class}"/>
+            <attribute name="Implementation-Version" value="${project.version}"/>
+            <attribute name="Build-Env" value="${env.name}"/>
+        </manifest>
+        <jar destfile="${dist.dir}/${project.name}-${env.name}.jar"
+             basedir="${build.dir}/env/${env.name}/classes"
+             manifest="${build.dir}/env/${env.name}/MANIFEST.MF"/>
+        <exec executable="${env.java.home}/bin/java" failonerror="false">
+            <arg line="${env.java.args}"/>
+            <arg value="-jar"/>
+            <arg value="${dist.dir}/${project.name}-${env.name}.jar"/>
+        </exec>
+    </target>
+
+    <!-- 14. ALT: замена имён классов/переменных + JAR через build-jar.xml -->
+    <target name="alt" depends="native2ascii" description="Альтернативная версия с заменами replace/replaceregexp">
+        <delete dir="${build.dir}/alt" quiet="true"/>
+        <mkdir dir="${build.dir}/alt/src"/>
+        <copy todir="${build.dir}/alt/src">
+            <fileset dir="${src.dir}" excludes="**/*.MD5,**/*.SHA-1"/>
+        </copy>
+        <replace dir="${build.dir}/alt/src" token="${replace.class.original}" value="${replace.class.new}"/>
+        <replace dir="${build.dir}/alt/src" token="${replace.variable.original}" value="${replace.variable.new}"/>
+        <move file="${build.dir}/alt/src/${replace.class.file.original}"
+              tofile="${build.dir}/alt/src/${replace.class.file.new}"
+              failonerror="false"/>
+        <ant antfile="build-jar.xml" target="build" inheritall="false">
+            <property name="param.src" value="${build.dir}/alt/src"/>
+            <property name="param.classes" value="${build.dir}/alt/classes"/>
+            <property name="param.name" value="${project.name}-alt"/>
+            <property name="param.main" value="${replace.main.class}"/>
+        </ant>
+        <echo message="[ALT] Альтернативный JAR создан: ${dist.dir}/${project.name}-alt.jar"/>
+    </target>
+
+    <!-- 15. DIFF: проверка SVN working copy и commit, если защищённые классы не изменены. Без отдельного .sh-файла. -->
+    <target name="diff" description="Проверка изменений SVN и commit, если можно">
+        <exec executable="svn" dir="${svn.workdir}" outputproperty="svn.status" failonerror="false">
+            <arg value="status"/>
+        </exec>
+        <echo message="${svn.status}"/>
+        <condition property="svn.has.changes">
+            <not><equals arg1="${svn.status}" arg2=""/></not>
+        </condition>
+        <condition property="svn.protected.changed">
+            <or>
+                <contains string="${svn.status}" substring="${diff.protected.class.1}"/>
+                <contains string="${svn.status}" substring="${diff.protected.class.2}"/>
+            </or>
+        </condition>
+        <condition property="svn.can.commit">
+            <and>
+                <isset property="svn.has.changes"/>
+                <not><isset property="svn.protected.changed"/></not>
+            </and>
+        </condition>
+        <antcall target="-diff-no-changes"/>
+        <antcall target="-diff-protected"/>
+        <antcall target="-diff-commit"/>
+    </target>
+
+    <target name="-diff-no-changes" unless="svn.has.changes">
+        <echo message="[DIFF] Изменений в SVN working copy нет"/>
+    </target>
+
+    <target name="-diff-protected" if="svn.protected.changed">
+        <echo message="[DIFF] Commit пропущен: изменены защищённые классы из build.properties"/>
+    </target>
+
+    <target name="-diff-commit" if="svn.can.commit">
+        <exec executable="svn" dir="${svn.workdir}" failonerror="true">
+            <arg value="add"/>
+            <arg value="--parents"/>
+            <arg value="--force"/>
+            <arg value="."/>
+        </exec>
+        <exec executable="svn" dir="${svn.workdir}" failonerror="true">
+            <arg value="commit"/>
+            <arg value="-m"/>
+            <arg value="Auto-commit: changes outside protected classes"/>
+        </exec>
+        <echo message="[DIFF] Изменения закоммичены в SVN"/>
+    </target>
+
+</project>

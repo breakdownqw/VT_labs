@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project name="build-jar" basedir=".">
+
+    <property file="build.properties"/>
+
+    <tstamp>
+        <format property="TODAY" pattern="yyyy-MM-dd HH:mm:ss"/>
+    </tstamp>
+
+    <target name="compile">
+        <mkdir dir="${param.classes}"/>
+        <javac srcdir="${param.src}"
+               destdir="${param.classes}"
+               source="${compiler.source}"
+               target="${compiler.target}"
+               includeantruntime="false"
+               encoding="UTF-8"
+               debug="true">
+            <classpath>
+                <fileset dir="${lib.dir}" includes="**/*.jar"/>
+            </classpath>
+        </javac>
+
+        <copy todir="${param.classes}">
+            <fileset dir="${resources.dir}" excludes="locale/**"/>
+        </copy>
+        <copy todir="${param.classes}/locale">
+            <fileset dir="${native.dest.dir}"/>
+        </copy>
+        <copy todir="${param.classes}/webapp">
+            <fileset dir="${webapp.dir}"/>
+        </copy>
+        <echo message="[COMPILE] Компиляция завершена: ${param.classes}"/>
+    </target>
+
+    <target name="build" depends="compile">
+        <mkdir dir="${dist.dir}"/>
+        <manifest file="${build.dir}/MANIFEST.MF">
+            <attribute name="Main-Class" value="${param.main}"/>
+            <attribute name="Implementation-Version" value="${project.version}"/>
+            <attribute name="Built-By" value="${user.name}"/>
+            <attribute name="Build-Date" value="${TODAY}"/>
+        </manifest>
+        <jar destfile="${dist.dir}/${param.name}.jar"
+             basedir="${param.classes}"
+             manifest="${build.dir}/MANIFEST.MF"/>
+        <echo message="[BUILD] JAR создан: ${dist.dir}/${param.name}.jar"/>
+    </target>
+
+</project>

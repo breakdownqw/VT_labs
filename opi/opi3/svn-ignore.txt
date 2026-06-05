@@ -1,0 +1,12 @@
+.git
+build
+dist
+doc
+reports
+tmp
+team
+target
+.idea
+*.class
+*.jar
+*.zip

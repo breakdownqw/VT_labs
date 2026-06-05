@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml"
+      xmlns:h="http://xmlns.jcp.org/jsf/html">
+<h:head>
+    <title>Start</title>
+    <meta charset="UTF-8" />
+    <link rel="stylesheet" href="#{request.contextPath}/static/css/start.css"/>
+</h:head>
+
+<h:body>
+    <!-- Шапка -->
+    <div class="header">
+        Новиков Даниил Дмитриевич | Р3231 | 8374
+    </div>
+
+    <!-- Основная зона -->
+    <div class="main">
+        <!-- Видео -->
+        <div class="video-container">
+            <video autoplay="" loop="" playsinline="" controls="">
+                <source src="#{request.contextPath}/static/media/klim.mp4" type="video/mp4"/>
+                Ваш браузер не поддерживает видео.
+            </video>
+        </div>
+
+        <!-- Правая панель -->
+        <aside class="side-panel">
+            <div class="clock" id="clock"></div>
+            <div class="button-block">
+                <h:form>
+                    <h:commandButton value="Main" action="goMain" styleClass="primary-btn"/>
+                </h:form>
+            </div>
+        </aside>
+    </div>
+
+    <script src="#{request.contextPath}/static/js/start.js"></script>
+</h:body>
+</html>

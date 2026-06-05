@@ -1,0 +1,94 @@
+/* Растягиваем страницу на всю высоту */
+html, body {
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    background-color: #121212;
+    font-family: "Segoe UI", Arial, sans-serif;
+    color: #eaeaea;
+    display: flex;
+    flex-direction: column;
+}
+
+/* Контейнер с контентом занимает всё доступное пространство */
+.main {
+    flex: 1 1 auto;
+    display: flex;
+    gap: 20px;
+    align-items: stretch;
+    justify-content: center;
+    padding: 0 20px 20px 20px;
+    box-sizing: border-box;
+}
+
+/* Видео занимает максимум высоты и ширины без переполнения */
+.video-container {
+    flex: 1 1 auto;
+    background: #1f1f1f;
+    border-radius: 12px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    padding: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    max-height: calc(100vh - 120px); /* высота окна минус шапка и отступы */
+    overflow: hidden;
+}
+
+.video-container video {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    border-radius: 8px;
+}
+
+/* Правая панель */
+.side-panel {
+    width: 220px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+/* Шапка не растягивается */
+.header {
+    font-family: fantasy;
+    color: #ffffff;
+    font-size: 18px;
+    font-weight: bold;
+    text-align: center;
+    padding: 15px;
+    background: #1f1f1f;
+    border-radius: 10px;
+    margin: 20px 20px 20px 20px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+
+/* Clock & кнопки — без изменений */
+.clock, .button-block {
+    background: #1f1f1f;
+    border-radius: 12px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    text-align: center;
+    padding: 25px 15px;
+    color: #eaeaea;
+}
+
+/* Кнопка */
+.primary-btn {
+    width: 100%;
+    padding: 12px 15px;
+    border: none;
+    border-radius: 8px;
+    background: #4fc3f7;
+    color: #000;
+    font-weight: bold;
+    font-size: 15px;
+    cursor: pointer;
+    transition: 0.25s;
+}
+.primary-btn:hover {
+    background: #0288d1;
+    color: #fff;
+    transform: scale(1.02);
+}

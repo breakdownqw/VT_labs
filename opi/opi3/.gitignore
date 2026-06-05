@@ -1,0 +1,11 @@
+build/
+dist/
+doc/
+reports/
+tmp/
+team/
+*.class
+*.jar
+*.zip
+*.MD5
+*.SHA-1
